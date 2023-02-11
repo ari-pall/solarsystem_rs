@@ -27,11 +27,14 @@ use {// bevy::{animation::prelude::Keyframes,
            vec::{IntoIter, Vec}}};
 
 fn new<T: Default>() -> T { T::default() }
+fn not(v: &bool) -> bool { v.not() }
+fn swap<R, F: Fn(&R) -> R>(r: &mut R, f: F) { *r = f(&r); }
 
 // fn main() { Conf {} }
 
 const MOVE_SPEED: f32 = 0.1;
 const LOOK_SPEED: f32 = 0.1;
+const WORLD_UP: Vec3 = vec3(0.0, 1.0, 0.0);
 
 fn conf() -> Conf {
   Conf { window_title: String::from("Macroquad"),
@@ -41,25 +44,44 @@ fn conf() -> Conf {
          ..Default::default() }
 }
 
+fn vec3_from_spherical_coords(yaw: f32, pitch: f32) -> Vec3 {
+  vec3(yaw.cos() * pitch.cos(), pitch.sin(), yaw.sin() * pitch.cos()).normalize()
+}
+struct State {
+  pub x: f32,
+  pub switch: bool,
+  pub yaw: f32,
+  pub pitch: f32,
+  pub front: Vec3,
+  pub right: Vec3,
+  pub up: Vec3,
+  pub position: Vec3,
+  pub last_mouse_position: Vec2,
+  pub grabbed: bool,
+}
+impl Default for State {
+  fn default() -> Self {
+    let yaw_default: f32 = 1.18;
+    let pitch_default: f32 = 1.18;
+    let front_default: Vec3 = vec3_from_spherical_coords(yaw_default, pitch_default);
+    Self { x: 0.0,
+           switch: false,
+           yaw: yaw_default,
+           pitch: pitch_default,
+           front: front_default,
+           right: front_default.cross(WORLD_UP).normalize(),
+           up: vec3(0.0, 1.0, 0.0),
+           position: vec3(0.0, 1.0, 0.0),
+           last_mouse_position: mouse_position().into(),
+           grabbed: true }
+  }
+}
+
 #[macroquad::main(conf)]
 async fn main() {
-  let mut x = 0.0;
-  let mut switch = false;
+  let mut state = State::default();
   let bounds = 8.0;
-
-  let world_up = vec3(0.0, 1.0, 0.0);
-  let mut yaw: f32 = 1.18;
-  let mut pitch: f32 = 0.0;
-
-  let mut front = vec3(yaw.cos() * pitch.cos(), pitch.sin(), yaw.sin() * pitch.cos()).normalize();
-  let mut right = front.cross(world_up).normalize();
-  let mut up;
-
-  let mut position = vec3(0.0, 1.0, 0.0);
-  let mut last_mouse_position: Vec2 = mouse_position().into();
-
-  let mut grabbed = true;
-  set_cursor_grab(grabbed);
+  set_cursor_grab(state.grabbed);
   show_mouse(false);
 
   loop {
@@ -69,56 +91,57 @@ async fn main() {
       break;
     }
     if is_key_pressed(KeyCode::Tab) {
-      grabbed = !grabbed;
-      set_cursor_grab(grabbed);
-      show_mouse(!grabbed);
+      swap(&mut state.grabbed, not);
+      // state.grabbed = !state.grabbed;
+      set_cursor_grab(state.grabbed);
+      show_mouse(!state.grabbed);
     }
 
     if is_key_down(KeyCode::Up) {
-      position += front * MOVE_SPEED;
+      state.position += state.front * MOVE_SPEED;
     }
     if is_key_down(KeyCode::Down) {
-      position -= front * MOVE_SPEED;
+      state.position -= state.front * MOVE_SPEED;
     }
     if is_key_down(KeyCode::Left) {
-      position -= right * MOVE_SPEED;
+      state.position -= state.right * MOVE_SPEED;
     }
     if is_key_down(KeyCode::Right) {
-      position += right * MOVE_SPEED;
+      state.position += state.right * MOVE_SPEED;
     }
 
     let mouse_position: Vec2 = mouse_position().into();
-    let mouse_delta = mouse_position - last_mouse_position;
-    last_mouse_position = mouse_position;
+    let mouse_delta = mouse_position - state.last_mouse_position;
+    state.last_mouse_position = mouse_position;
 
-    yaw += mouse_delta.x * delta * LOOK_SPEED;
-    pitch += mouse_delta.y * delta * -LOOK_SPEED;
+    state.yaw += mouse_delta.x * delta * LOOK_SPEED;
+    state.pitch += mouse_delta.y * delta * -LOOK_SPEED;
 
-    pitch = if pitch > 1.5 { 1.5 } else { pitch };
-    pitch = if pitch < -1.5 { -1.5 } else { pitch };
+    state.pitch = if state.pitch > 1.5 { 1.5 } else { state.pitch };
+    state.pitch = if state.pitch < -1.5 { -1.5 } else { state.pitch };
 
-    front = vec3(yaw.cos() * pitch.cos(), pitch.sin(), yaw.sin() * pitch.cos()).normalize();
+    state.front = vec3_from_spherical_coords(state.yaw, state.pitch);
 
-    right = front.cross(world_up).normalize();
-    up = right.cross(front).normalize();
+    state.right = state.front.cross(WORLD_UP).normalize();
+    state.up = state.right.cross(state.front).normalize();
 
-    x += if switch { 0.04 } else { -0.04 };
-    if x >= bounds || x <= -bounds {
-      switch = !switch;
+    state.x += if state.switch { 0.04 } else { -0.04 };
+    if state.x >= bounds || state.x <= -bounds {
+      state.switch = !state.switch;
     }
 
     clear_background(LIGHTGRAY);
 
     // Going 3d!
 
-    set_camera(&Camera3D { position: position,
-                           up: up,
-                           target: position + front,
+    set_camera(&Camera3D { position: state.position,
+                           up: state.up,
+                           target: state.position + state.front,
                            ..Default::default() });
 
     draw_grid(20, 1., BLACK, GRAY);
 
-    draw_line_3d(vec3(x, 0.0, x),
+    draw_line_3d(vec3(state.x, 0.0, state.x),
                  vec3(5.0, 5.0, 5.0),
                  Color::new(1.0, 1.0, 0.0, 1.0));
 
@@ -136,7 +159,7 @@ async fn main() {
               48.0 + 18.0,
               30.0,
               BLACK);
-    draw_text(format!("Press <TAB> to toggle mouse grab: {}", grabbed).as_str(),
+    draw_text(format!("Press <TAB> to toggle mouse grab: {}", state.grabbed).as_str(),
               10.0,
               48.0 + 42.0,
               30.0,
@@ -157,14 +180,14 @@ async fn main() {
 //     }
 //   }
 // }
-fn aaa() {
-  let n = new::<i32>();
+// fn aaa() {
+//   let n = new::<i32>();
 
-  let x = Option::Some(3);
-  if let Some(v) = x {
-    println!("yep");
-  }
-}
+//   let x = Option::Some(3);
+//   if let Some(v) = x {
+//     println!("yep");
+//   }
+// }
 
 // struct Burrito {
 //     meat: bool,
