@@ -1,5 +1,7 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
+
+use macroquad::color;
 use {// bevy::{animation::prelude::Keyframes,
      //         app::App,
      //         ecs::{event::{Event, Events},
@@ -27,7 +29,7 @@ use {// bevy::{animation::prelude::Keyframes,
            vec::{IntoIter, Vec}}};
 
 fn new<T: Default>() -> T { T::default() }
-fn not(v: &bool) -> bool { v.not() }
+fn not(v: bool) -> bool { v.not() }
 fn swap<R, F: Fn(&R) -> R>(r: &mut R, f: F) { *r = f(&r); }
 
 // fn main() { Conf {} }
@@ -47,7 +49,9 @@ fn conf() -> Conf {
 fn vec3_from_spherical_coords(yaw: f32, pitch: f32) -> Vec3 {
   vec3(yaw.cos() * pitch.cos(), pitch.sin(), yaw.sin() * pitch.cos()).normalize()
 }
+struct Planet(Vec3, Vec3, color::Color, f32);
 struct State {
+  pub planets: Vec<Planet>,
   pub x: f32,
   pub switch: bool,
   pub yaw: f32,
@@ -64,7 +68,12 @@ impl Default for State {
     let yaw_default: f32 = 1.18;
     let pitch_default: f32 = 1.18;
     let front_default: Vec3 = vec3_from_spherical_coords(yaw_default, pitch_default);
-    Self { x: 0.0,
+    let zerovec = vec3(0.0, 0.0, 0.0);
+    Self { planets: vec![Planet(vec3(1.5, 1.5, 1.5), zerovec, GREEN, 1.0),
+                         Planet(vec3(1.1, -2.2, 1.5), zerovec, BLUE, 1.0),
+                         Planet(vec3(-1.1, -2.2, -1.5), zerovec, GREEN, 1.0),
+                         Planet(vec3(3.9, -2.1, -1.5), zerovec, RED, 1.0)],
+           x: 0.0,
            switch: false,
            yaw: yaw_default,
            pitch: pitch_default,
@@ -91,8 +100,8 @@ async fn main() {
       break;
     }
     if is_key_pressed(KeyCode::Tab) {
-      swap(&mut state.grabbed, not);
-      // state.grabbed = !state.grabbed;
+      // swap(&mut state.grabbed, not);
+      state.grabbed = !state.grabbed;
       set_cursor_grab(state.grabbed);
       show_mouse(!state.grabbed);
     }
@@ -117,6 +126,7 @@ async fn main() {
     state.yaw += mouse_delta.x * delta * LOOK_SPEED;
     state.pitch += mouse_delta.y * delta * -LOOK_SPEED;
 
+    // swap(state.pitch, |p| p.clamp(-1.5, 1.5));
     state.pitch = if state.pitch > 1.5 { 1.5 } else { state.pitch };
     state.pitch = if state.pitch < -1.5 { -1.5 } else { state.pitch };
 
@@ -130,7 +140,7 @@ async fn main() {
       state.switch = !state.switch;
     }
 
-    clear_background(LIGHTGRAY);
+    clear_background(DARKGRAY);
 
     // Going 3d!
 
@@ -148,6 +158,14 @@ async fn main() {
     draw_cube_wires(vec3(0., 1., -6.), vec3(2., 2., 2.), GREEN);
     draw_cube_wires(vec3(0., 1., 6.), vec3(2., 2., 2.), BLUE);
     draw_cube_wires(vec3(2., 1., 2.), vec3(2., 2., 2.), RED);
+
+    for Planet(coord, vel, color, radius) in &state.planets {
+      draw_sphere(coord.clone(),
+                  radius.clone(),
+                  Option::<Texture2D>::None,
+                  color.clone());
+    }
+    // for p1 in &state.planets {}
 
     // Back to screen space, render some text
 
