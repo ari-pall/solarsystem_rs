@@ -1,7 +1,6 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 
-use macroquad::color;
 use {// bevy::{animation::prelude::Keyframes,
      //         app::App,
      //         ecs::{event::{Event, Events},
@@ -14,7 +13,7 @@ use {// bevy::{animation::prelude::Keyframes,
      //         window::Windows,
      //         DefaultPlugins}
      // ,
-     macroquad::prelude::*,
+     macroquad::{color, prelude::*},
      std::{// arch::x86_64::_mm_mask_fnmadd_pd,
            boxed::Box,
            collections::{BTreeMap, HashMap},
@@ -26,11 +25,31 @@ use {// bevy::{animation::prelude::Keyframes,
            ops::{Add, Div, Not, Rem, Sub},
            str::{FromStr, SplitAsciiWhitespace},
            string,
+
            vec::{IntoIter, Vec}}};
 
 fn new<T: Default>() -> T { T::default() }
 fn not(v: bool) -> bool { v.not() }
-fn swap<R, F: Fn(&R) -> R>(r: &mut R, f: F) { *r = f(&r); }
+
+macro_rules! swap {
+  ($x:ident,$f:expr, $($args:tt),*) => {{
+    $x = $f($x, $($args),*);
+    $x
+  }};
+  ($x:ident,$f:expr) => {{
+    $x = $f($x);
+    $x
+  }};
+}
+// a().to_string().as_str()
+/* -> &'static str */
+// fn to_str<T: ToString>(v: T) -> &'static str { v.to_string().as_str() }
+fn inc<T: Add<Output = T> + From<u8>>(a: T) -> T { a + T::from(1u8) }
+fn a() -> i32 {
+  let mut f = 5;
+  swap!(f, inc);
+  swap!(f, i32::add, 2)
+}
 
 // fn main() { Conf {} }
 
@@ -170,7 +189,8 @@ async fn main() {
     // Back to screen space, render some text
 
     set_default_camera();
-    draw_text("First Person Camera", 10.0, 20.0, 30.0, BLACK);
+    // draw_text("First Person Camera", 10.0, 20.0, 30.0, BLACK);
+    draw_text(a().to_string().as_str(), 10.0, 20.0, 30.0, BLACK);
 
     draw_text(format!("X: {} Y: {}", mouse_position.x, mouse_position.y).as_str(),
               10.0,
