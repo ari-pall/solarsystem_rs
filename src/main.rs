@@ -13,30 +13,29 @@ use {// bevy::{animation::prelude::Keyframes,
      //         window::Windows,
      //         DefaultPlugins}
      // ,
-     macroquad::{color, prelude::*},
-     std::{// arch::x86_64::_mm_mask_fnmadd_pd,
-           boxed::Box,
+     macroquad::{color, miniquad::start, prelude::*},
+  macroquad::material::gl_use_material
+     std::{boxed::Box,
            collections::{BTreeMap, HashMap},
            convert::identity,
            fmt::{Debug, Display, Result},
            io::{self, stdin, stdout, BufRead, Error, Lines, Read, StdinLock, Write},
-           iter::Map,
+           iter::{IntoIterator, Map},
            num,
-           ops::{Add, Div, Not, Rem, Sub},
+           ops::{Add, Div, MulAssign, Not, Rem, Sub},
            str::{FromStr, SplitAsciiWhitespace},
            string,
-
            vec::{IntoIter, Vec}}};
 
 fn new<T: Default>() -> T { T::default() }
 fn not(v: bool) -> bool { v.not() }
 
 macro_rules! swap {
-  ($x:ident,$f:expr, $($args:tt),*) => {{
+  ($x:expr,$f:expr, $($args:expr),*) => {{
     $x = $f($x, $($args),*);
     $x
   }};
-  ($x:ident,$f:expr) => {{
+  ($x:expr,$f:expr) => {{
     $x = $f($x);
     $x
   }};
@@ -68,30 +67,70 @@ fn conf() -> Conf {
 fn vec3_from_spherical_coords(yaw: f32, pitch: f32) -> Vec3 {
   vec3(yaw.cos() * pitch.cos(), pitch.sin(), yaw.sin() * pitch.cos()).normalize()
 }
-struct Planet(Vec3, Vec3, color::Color, f32);
+#[derive(Copy, Clone)]
+struct Planet {
+  pos: Vec3,
+  vel: Vec3,
+  color: Color,
+  radius: f32,
+}
+impl Planet {
+  fn random() -> Planet {
+    let rng = |a, b| rand::gen_range::<f32>(a, b);
+    let x = rng(0.1, 0.9);
+    let y = rng(0.1, 0.9);
+    let z = rng(0.1, 0.9);
+    Planet { color: Color { a: 1.0,
+                            r: x,
+                            g: y,
+                            b: z },
+             pos: vec3(x * 20.0, y * 20.0, z * 20.0),
+             vel: vec3(rng(-0.01, 0.01), rng(-0.01, 0.01), rng(-0.01, 0.01)),
+             radius: rng(0.1, 0.5) }
+  }
+}
+const NUM_PLANETS: usize = 12;
+#[derive(Copy, Clone)]
+struct Planets([Planet; NUM_PLANETS]);
+impl Planets {
+  fn gravity(&mut self) {
+    let p = &mut self.0;
+    for i in 0..NUM_PLANETS {
+      for j in 0..NUM_PLANETS {
+        if j != i {
+          p[i].vel +=
+            0.004 * p[i].radius * p[j].radius * (p[j].pos - p[i].pos) / p[i].pos.distance(p[j].pos).powi(3);
+        }
+      }
+    }
+  }
+  fn movement(&mut self) {
+    for i in &mut self.0 {
+      i.pos += i.vel;
+      // i.pos += vec3(0.01, 0.01, 0.01);
+    }
+  }
+}
 struct State {
-  pub planets: Vec<Planet>,
-  pub x: f32,
-  pub switch: bool,
-  pub yaw: f32,
-  pub pitch: f32,
-  pub front: Vec3,
-  pub right: Vec3,
-  pub up: Vec3,
-  pub position: Vec3,
-  pub last_mouse_position: Vec2,
-  pub grabbed: bool,
+  planets: Planets,
+  x: f32,
+  switch: bool,
+  yaw: f32,
+  pitch: f32,
+  front: Vec3,
+  right: Vec3,
+  up: Vec3,
+  position: Vec3,
+  last_mouse_position: Vec2,
+  grabbed: bool,
 }
 impl Default for State {
   fn default() -> Self {
     let yaw_default: f32 = 1.18;
     let pitch_default: f32 = 1.18;
     let front_default: Vec3 = vec3_from_spherical_coords(yaw_default, pitch_default);
-    let zerovec = vec3(0.0, 0.0, 0.0);
-    Self { planets: vec![Planet(vec3(1.5, 1.5, 1.5), zerovec, GREEN, 1.0),
-                         Planet(vec3(1.1, -2.2, 1.5), zerovec, BLUE, 1.0),
-                         Planet(vec3(-1.1, -2.2, -1.5), zerovec, GREEN, 1.0),
-                         Planet(vec3(3.9, -2.1, -1.5), zerovec, RED, 1.0)],
+    // let zerovec = vec3(0.0, 0.0, 0.0);
+    Self { planets: Planets([Planet::random(); NUM_PLANETS].map(|_| Planet::random())),
            x: 0.0,
            switch: false,
            yaw: yaw_default,
@@ -104,6 +143,11 @@ impl Default for State {
            grabbed: true }
   }
 }
+enum A {
+  B = 1,
+  C = 2,
+  D = 3,
+}
 
 #[macroquad::main(conf)]
 async fn main() {
@@ -113,28 +157,31 @@ async fn main() {
   show_mouse(false);
 
   loop {
+    // state.planets.0.sort_by(compare)
     let delta = get_frame_time();
 
     if is_key_pressed(KeyCode::Escape) {
       break;
     }
     if is_key_pressed(KeyCode::Tab) {
-      // swap(&mut state.grabbed, not);
-      state.grabbed = !state.grabbed;
+      swap!(state.grabbed, not);
+      // state.grabbed = !state.grabbed;
       set_cursor_grab(state.grabbed);
       show_mouse(!state.grabbed);
     }
 
-    if is_key_down(KeyCode::Up) {
-      state.position += state.front * MOVE_SPEED;
+    if is_key_down(KeyCode::Up) || is_key_down(KeyCode::W) {
+      // (swap! state.position + (* state.front MOVE_SPEED))
+      swap!(state.position, Add::add, state.front * MOVE_SPEED);
+      // state.position += state.front * MOVE_SPEED;
     }
-    if is_key_down(KeyCode::Down) {
+    if is_key_down(KeyCode::Down) || is_key_down(KeyCode::S) {
       state.position -= state.front * MOVE_SPEED;
     }
-    if is_key_down(KeyCode::Left) {
+    if is_key_down(KeyCode::Left) || is_key_down(KeyCode::A) {
       state.position -= state.right * MOVE_SPEED;
     }
-    if is_key_down(KeyCode::Right) {
+    if is_key_down(KeyCode::Right) || is_key_down(KeyCode::D) {
       state.position += state.right * MOVE_SPEED;
     }
 
@@ -145,9 +192,9 @@ async fn main() {
     state.yaw += mouse_delta.x * delta * LOOK_SPEED;
     state.pitch += mouse_delta.y * delta * -LOOK_SPEED;
 
-    // swap(state.pitch, |p| p.clamp(-1.5, 1.5));
-    state.pitch = if state.pitch > 1.5 { 1.5 } else { state.pitch };
-    state.pitch = if state.pitch < -1.5 { -1.5 } else { state.pitch };
+    swap!(state.pitch, clamp, -1.5, 1.5);
+    // state.pitch = if state.pitch > 1.5 { 1.5 } else { state.pitch };
+    // state.pitch = if state.pitch < -1.5 { -1.5 } else { state.pitch };
 
     state.front = vec3_from_spherical_coords(state.yaw, state.pitch);
 
@@ -159,7 +206,7 @@ async fn main() {
       state.switch = !state.switch;
     }
 
-    clear_background(DARKGRAY);
+    clear_background(BLACK);
 
     // Going 3d!
 
@@ -168,7 +215,7 @@ async fn main() {
                            target: state.position + state.front,
                            ..Default::default() });
 
-    draw_grid(20, 1., BLACK, GRAY);
+    draw_grid(20, 1., DARKGRAY, GRAY);
 
     draw_line_3d(vec3(state.x, 0.0, state.x),
                  vec3(5.0, 5.0, 5.0),
@@ -178,79 +225,30 @@ async fn main() {
     draw_cube_wires(vec3(0., 1., 6.), vec3(2., 2., 2.), BLUE);
     draw_cube_wires(vec3(2., 1., 2.), vec3(2., 2., 2.), RED);
 
-    for Planet(coord, vel, color, radius) in &state.planets {
-      draw_sphere(coord.clone(),
-                  radius.clone(),
-                  Option::<Texture2D>::None,
-                  color.clone());
+    for Planet { pos, color, radius, .. } in state.planets.0 {
+      draw_sphere(pos, radius, Option::<Texture2D>::None, color);
     }
-    // for p1 in &state.planets {}
+    state.planets.gravity();
+    state.planets.movement();
+    // gravity(&mut state.planets);
+    // movement(&mut state.planets);
+    // swap!(state.planets, gravity);
 
     // Back to screen space, render some text
 
     set_default_camera();
     // draw_text("First Person Camera", 10.0, 20.0, 30.0, BLACK);
     draw_text(a().to_string().as_str(), 10.0, 20.0, 30.0, BLACK);
-
-    draw_text(format!("X: {} Y: {}", mouse_position.x, mouse_position.y).as_str(),
-              10.0,
-              48.0 + 18.0,
-              30.0,
-              BLACK);
     draw_text(format!("Press <TAB> to toggle mouse grab: {}", state.grabbed).as_str(),
               10.0,
               48.0 + 42.0,
               30.0,
-              BLACK);
+              WHITE);
 
     next_frame().await
   }
 }
 
-// struct Spinner;
-
-// // In
-// impl System for Spinner {
-//   fn run(&mut self, mut query: Query<(&mut Transform, &Node)>) {
-//     for (transform, _node) in &mut query.iter() {
-//       transform.rotate(Quat::from_rotation_x(0.01));
-//       transform.rotate(Quat::from_rotation_y(0.01));
-//     }
-//   }
-// }
-// fn aaa() {
-//   let n = new::<i32>();
-
-//   let x = Option::Some(3);
-//   if let Some(v) = x {
-//     println!("yep");
-//   }
-// }
-
-// struct Burrito {
-//     meat: bool,
-//     tomato: bool,
-//     mayonnaise: bool,
-// }
-// struct Monad(Burrito);
-// struct Lambda<A, B, T: Fn(A) -> B>(T);
-
-// fn main() {
-//     let m = Monad(Burrito { meat: true, tomato: true, mayonnaise: false });
-//     let myapp = App::new().world;
-//     ()
-//     // "aaa"
-
-//     // test();
-// }
-// type Coord = [Int; 2];
-// #[derive(PartialEq, Clone, Copy, Hash)]
-// struct Coord(i16, i16);
-// enum ItemId {
-//     Wood,
-//     Sword,
-//     Loot,
-// }
 struct Coord(i32, i32);
 const ORIGIN: Coord = Coord(0, 0);
 struct Keyword(String);
