@@ -14,7 +14,6 @@ use {// bevy::{animation::prelude::Keyframes,
      //         DefaultPlugins}
      // ,
      macroquad::{color, miniquad::start, prelude::*},
-  macroquad::material::gl_use_material
      std::{boxed::Box,
            collections::{BTreeMap, HashMap},
            convert::identity,
@@ -74,8 +73,27 @@ struct Planet {
   color: Color,
   radius: f32,
 }
+macro_rules! with {
+  ($($a:expr),*) => {
+    1
+  }; // ($a:expr) => {
+     //   $a + 1
+     // };
+}
 impl Planet {
   fn random() -> Planet {
+    let u = with! {rng = |a, b| rand::gen_range::<f32>(a, b),
+                   x = rng(0.1, 0.9),
+                   y = rng(0.1, 0.9),
+                   z = rng(0.1, 0.9),
+                   Planet { color: Color { a: 1.0,
+                                           r: x,
+                                           g: y,
+                                           b: z },
+                            pos: vec3(x * 20.0, y * 20.0, z * 20.0),
+                            vel: vec3(rng(-0.01, 0.01), rng(-0.01, 0.01), rng(-0.01, 0.01)),
+                            radius: rng(0.1, 0.5) }
+    };
     let rng = |a, b| rand::gen_range::<f32>(a, b);
     let x = rng(0.1, 0.9);
     let y = rng(0.1, 0.9);
@@ -92,8 +110,20 @@ impl Planet {
 const NUM_PLANETS: usize = 12;
 #[derive(Copy, Clone)]
 struct Planets([Planet; NUM_PLANETS]);
+
+fn gravity(Planets(mut p): Planets) -> Planets {
+  for i in 0..NUM_PLANETS {
+    for j in 0..NUM_PLANETS {
+      if j != i {
+        p[i].vel +=
+          0.004 * p[i].radius * p[j].radius * (p[j].pos - p[i].pos) / p[i].pos.distance(p[j].pos).powi(3);
+      }
+    }
+  }
+  Planets(p)
+}
 impl Planets {
-  fn gravity(&mut self) {
+  fn gravity(mut self) {
     let p = &mut self.0;
     for i in 0..NUM_PLANETS {
       for j in 0..NUM_PLANETS {
@@ -126,23 +156,28 @@ struct State {
 }
 impl Default for State {
   fn default() -> Self {
-    let yaw_default: f32 = 1.18;
-    let pitch_default: f32 = 1.18;
-    let front_default: Vec3 = vec3_from_spherical_coords(yaw_default, pitch_default);
+    let yaw = 1.18;
+    let pitch = 1.18;
+    let front = vec3_from_spherical_coords(yaw, pitch);
     // let zerovec = vec3(0.0, 0.0, 0.0);
     Self { planets: Planets([Planet::random(); NUM_PLANETS].map(|_| Planet::random())),
            x: 0.0,
            switch: false,
-           yaw: yaw_default,
-           pitch: pitch_default,
-           front: front_default,
-           right: front_default.cross(WORLD_UP).normalize(),
+           yaw,
+           pitch,
+           front,
+           right: front.cross(WORLD_UP).normalize(),
            up: vec3(0.0, 1.0, 0.0),
            position: vec3(0.0, 1.0, 0.0),
            last_mouse_position: mouse_position().into(),
            grabbed: true }
   }
 }
+// impl State{
+//   fn update(self){
+
+// }
+// }
 enum A {
   B = 1,
   C = 2,
@@ -156,6 +191,11 @@ async fn main() {
   set_cursor_grab(state.grabbed);
   show_mouse(false);
 
+  //   let!{
+  //     a=2,
+  //     b=3,
+  //     print(a+b);
+  // }
   loop {
     // state.planets.0.sort_by(compare)
     let delta = get_frame_time();
