@@ -1,7 +1,10 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 
-use {// bevy::{animation::prelude::Keyframes,
+use macroquad::miniquad::native::linux_x11::libx11::KeyCode;
+
+use {itertools::{iproduct, iterate},
+     // bevy::{animation::prelude::Keyframes,
      //         app::App,
      //         ecs::{event::{Event, Events},
      //               prelude::FromWorld,
@@ -21,7 +24,7 @@ use {// bevy::{animation::prelude::Keyframes,
            io::{self, stdin, stdout, BufRead, Error, Lines, Read, StdinLock, Write},
            iter::{IntoIterator, Map},
            num,
-           ops::{Add, Div, MulAssign, Not, Rem, Sub},
+           ops::{Add, Deref, DerefMut, Div, MulAssign, Not, Rem, Sub},
            str::{FromStr, SplitAsciiWhitespace},
            string,
            vec::{IntoIter, Vec}}};
@@ -44,12 +47,12 @@ macro_rules! swap {
 // fn to_str<T: ToString>(v: T) -> &'static str { v.to_string().as_str() }
 fn inc<T: Add<Output = T> + From<u8>>(a: T) -> T { a + T::from(1u8) }
 fn a() -> i32 {
+  // KeyCode::LeftShift
+  // iterate(initial_value, f)
   let mut f = 5;
   swap!(f, inc);
   swap!(f, i32::add, 2)
 }
-
-// fn main() { Conf {} }
 
 const MOVE_SPEED: f32 = 0.1;
 const LOOK_SPEED: f32 = 0.1;
@@ -66,34 +69,34 @@ fn conf() -> Conf {
 fn vec3_from_spherical_coords(yaw: f32, pitch: f32) -> Vec3 {
   vec3(yaw.cos() * pitch.cos(), pitch.sin(), yaw.sin() * pitch.cos()).normalize()
 }
-#[derive(Copy, Clone)]
+// #[derive(Copy, Clone)]
 struct Planet {
   pos: Vec3,
   vel: Vec3,
   color: Color,
   radius: f32,
 }
-macro_rules! with {
-  ($($a:expr),*) => {
-    1
-  }; // ($a:expr) => {
-     //   $a + 1
-     // };
-}
+// macro_rules! with {
+//   ($($a:expr),*) => {
+//     1
+//   }; // ($a:expr) => {
+//      //   $a + 1
+//      // };
+// }
+// let u = with! {rng = |a, b| rand::gen_range::<f32>(a, b),
+//                x = rng(0.1, 0.9),
+//                y = rng(0.1, 0.9),
+//                z = rng(0.1, 0.9),
+//                Planet { color: Color { a: 1.0,
+//                                        r: x,
+//                                        g: y,
+//                                        b: z },
+//                         pos: vec3(x * 20.0, y * 20.0, z * 20.0),
+//                         vel: vec3(rng(-0.01, 0.01), rng(-0.01, 0.01), rng(-0.01, 0.01)),
+//                         radius: rng(0.1, 0.5) }
+// };
 impl Planet {
   fn random() -> Planet {
-    let u = with! {rng = |a, b| rand::gen_range::<f32>(a, b),
-                   x = rng(0.1, 0.9),
-                   y = rng(0.1, 0.9),
-                   z = rng(0.1, 0.9),
-                   Planet { color: Color { a: 1.0,
-                                           r: x,
-                                           g: y,
-                                           b: z },
-                            pos: vec3(x * 20.0, y * 20.0, z * 20.0),
-                            vel: vec3(rng(-0.01, 0.01), rng(-0.01, 0.01), rng(-0.01, 0.01)),
-                            radius: rng(0.1, 0.5) }
-    };
     let rng = |a, b| rand::gen_range::<f32>(a, b);
     let x = rng(0.1, 0.9);
     let y = rng(0.1, 0.9);
@@ -107,38 +110,30 @@ impl Planet {
              radius: rng(0.1, 0.5) }
   }
 }
-const NUM_PLANETS: usize = 12;
-#[derive(Copy, Clone)]
-struct Planets([Planet; NUM_PLANETS]);
 
-fn gravity(Planets(mut p): Planets) -> Planets {
-  for i in 0..NUM_PLANETS {
-    for j in 0..NUM_PLANETS {
-      if j != i {
-        p[i].vel +=
-          0.004 * p[i].radius * p[j].radius * (p[j].pos - p[i].pos) / p[i].pos.distance(p[j].pos).powi(3);
-      }
-    }
-  }
-  Planets(p)
-}
+const NUM_PLANETS: usize = 30;
+// #[derive(Clone)]
+struct Planets([Planet; NUM_PLANETS]);
 impl Planets {
-  fn gravity(mut self) {
-    let p = &mut self.0;
-    for i in 0..NUM_PLANETS {
-      for j in 0..NUM_PLANETS {
-        if j != i {
-          p[i].vel +=
-            0.004 * p[i].radius * p[j].radius * (p[j].pos - p[i].pos) / p[i].pos.distance(p[j].pos).powi(3);
-        }
-      }
-    }
+  fn gravity(self) -> Self {
+    Self(iproduct!(0..NUM_PLANETS, 0..NUM_PLANETS).fold(self.0, |mut p, (i, j)| {
+                                                    if j != i {
+                                                      p[i].vel += 0.1
+                                                                  * p[i].radius.powi(3)
+                                                                  * p[j].radius.powi(3)
+                                                                  * (p[j].pos - p[i].pos)
+                                                                  / p[i].pos.distance(p[j].pos).powi(3);
+                                                      p
+                                                    } else {
+                                                      p
+                                                    }
+                                                  }))
   }
-  fn movement(&mut self) {
-    for i in &mut self.0 {
-      i.pos += i.vel;
-      // i.pos += vec3(0.01, 0.01, 0.01);
-    }
+  fn movement(self) -> Self {
+    Self(self.0.map(|mut planet| {
+                 planet.pos += planet.vel;
+                 planet
+               }))
   }
 }
 struct State {
@@ -151,6 +146,7 @@ struct State {
   right: Vec3,
   up: Vec3,
   position: Vec3,
+  orientation: Quat,
   last_mouse_position: Vec2,
   grabbed: bool,
 }
@@ -159,8 +155,7 @@ impl Default for State {
     let yaw = 1.18;
     let pitch = 1.18;
     let front = vec3_from_spherical_coords(yaw, pitch);
-    // let zerovec = vec3(0.0, 0.0, 0.0);
-    Self { planets: Planets([Planet::random(); NUM_PLANETS].map(|_| Planet::random())),
+    Self { planets: Planets([(); NUM_PLANETS].map(|_| Planet::random())),
            x: 0.0,
            switch: false,
            yaw,
@@ -169,72 +164,80 @@ impl Default for State {
            right: front.cross(WORLD_UP).normalize(),
            up: vec3(0.0, 1.0, 0.0),
            position: vec3(0.0, 1.0, 0.0),
+           orientation: Quat::default(),
            last_mouse_position: mouse_position().into(),
            grabbed: true }
   }
 }
-// impl State{
-//   fn update(self){
-
-// }
-// }
-enum A {
-  B = 1,
-  C = 2,
-  D = 3,
+impl state {
+  fn update(self, change: Vec3, mouse_position: Vec2) -> Self {
+    let State { front,
+                last_mouse_position,
+                pitch,
+                planets,
+                position,
+                right,
+                up,
+                x,
+                yaw,
+                grabbed,
+                .. } = self;
+    let mouse_delta = mouse_position - last_mouse_position;
+    State { planets: planets.gravity().movement(),
+            x: x += if state.switch { 0.04 } else { -0.04 },
+            position: position + change,
+            last_mouse_position: mouse_position }
+    // lost progress...
+  }
 }
-
+// swap!(state.position, Add::add, state.front * MOVE_SPEED);
+// const LOWER_BOUND: f32 = -8.0;
+// const UPPER_BOUND: f32 = -LOWER_BOUND;
 #[macroquad::main(conf)]
 async fn main() {
   let mut state = State::default();
   let bounds = 8.0;
   set_cursor_grab(state.grabbed);
   show_mouse(false);
-
-  //   let!{
-  //     a=2,
-  //     b=3,
-  //     print(a+b);
-  // }
   loop {
-    // state.planets.0.sort_by(compare)
+    // Quat::from_rotation_y(angle)
+    //   Quat::to_axis_angle(self)
     let delta = get_frame_time();
 
     if is_key_pressed(KeyCode::Escape) {
       break;
     }
     if is_key_pressed(KeyCode::Tab) {
-      swap!(state.grabbed, not);
-      // state.grabbed = !state.grabbed;
+      // swap!(state.grabbed, not);
+      state.grabbed = !state.grabbed;
       set_cursor_grab(state.grabbed);
       show_mouse(!state.grabbed);
     }
-
-    if is_key_down(KeyCode::Up) || is_key_down(KeyCode::W) {
-      // (swap! state.position + (* state.front MOVE_SPEED))
-      swap!(state.position, Add::add, state.front * MOVE_SPEED);
-      // state.position += state.front * MOVE_SPEED;
-    }
-    if is_key_down(KeyCode::Down) || is_key_down(KeyCode::S) {
-      state.position -= state.front * MOVE_SPEED;
-    }
-    if is_key_down(KeyCode::Left) || is_key_down(KeyCode::A) {
-      state.position -= state.right * MOVE_SPEED;
-    }
-    if is_key_down(KeyCode::Right) || is_key_down(KeyCode::D) {
-      state.position += state.right * MOVE_SPEED;
+    let mut change = Vec3::ZERO;
+    for (key, dir, sign) in [(KeyCode::W, state.front, 1.0),
+                             (KeyCode::A, state.right, -1.0),
+                             (KeyCode::S, state.front, -1.0),
+                             (KeyCode::D, state.right, 1.0),
+                             (KeyCode::LeftShift, state.up, 1.0),
+                             (KeyCode::LeftControl, state.up, -1.0)]
+    {
+      if is_key_down(key) {
+        change += dir * sign * MOVE_SPEED;
+      }
     }
 
     let mouse_position: Vec2 = mouse_position().into();
     let mouse_delta = mouse_position - state.last_mouse_position;
-    state.last_mouse_position = mouse_position;
+    // state.last_mouse_position = mouse_position;
+    state = state.update(change, mouse_position);
 
+    // use quaternions instead of Vec3's?
+    // Quat::clone_from(&mut self, source)
     state.yaw += mouse_delta.x * delta * LOOK_SPEED;
     state.pitch += mouse_delta.y * delta * -LOOK_SPEED;
 
-    swap!(state.pitch, clamp, -1.5, 1.5);
-    // state.pitch = if state.pitch > 1.5 { 1.5 } else { state.pitch };
-    // state.pitch = if state.pitch < -1.5 { -1.5 } else { state.pitch };
+    // swap!(state.pitch, clamp, -1.5, 1.5);
+    state.pitch = state.pitch.clamp(-1.5, 1.5);
 
     state.front = vec3_from_spherical_coords(state.yaw, state.pitch);
 
@@ -242,6 +245,10 @@ async fn main() {
     state.up = state.right.cross(state.front).normalize();
 
     state.x += if state.switch { 0.04 } else { -0.04 };
+    // match state.x {
+    //   LOWER_BOUND..=UPPER_BOUND => (),
+    //   _ => state.switch = !state.switch,
+    // };
     if state.x >= bounds || state.x <= -bounds {
       state.switch = !state.switch;
     }
@@ -265,19 +272,17 @@ async fn main() {
     draw_cube_wires(vec3(0., 1., 6.), vec3(2., 2., 2.), BLUE);
     draw_cube_wires(vec3(2., 1., 2.), vec3(2., 2., 2.), RED);
 
-    for Planet { pos, color, radius, .. } in state.planets.0 {
-      draw_sphere(pos, radius, Option::<Texture2D>::None, color);
+    // let State { planets: Planets(p), .. } = &state;
+    for Planet { pos, color, radius, .. } in &state.planets.0 {
+      draw_sphere(*pos, *radius, None, *color);
     }
-    state.planets.gravity();
-    state.planets.movement();
-    // gravity(&mut state.planets);
-    // movement(&mut state.planets);
-    // swap!(state.planets, gravity);
+    // state = State { planets: state.planets.gravity().movement(),
+    //                 ..state };
+    state.planets = state.planets.gravity().movement();
 
     // Back to screen space, render some text
 
     set_default_camera();
-    // draw_text("First Person Camera", 10.0, 20.0, 30.0, BLACK);
     draw_text(a().to_string().as_str(), 10.0, 20.0, 30.0, BLACK);
     draw_text(format!("Press <TAB> to toggle mouse grab: {}", state.grabbed).as_str(),
               10.0,
@@ -297,16 +302,16 @@ enum EntityId {
   ItemEntity(Keyword),
   Tile(Coord),
 }
-// enum CurrentView {
-//     WorldView,
-//     InventoryView,
-// }
-// enum Key {
-//     Left,
-//     Right,
-//     Up,
-//     Down,
-// }
+enum CurrentView {
+  WorldView,
+  InventoryView,
+}
+enum Key {
+  Left,
+  Right,
+  Up,
+  Down,
+}
 // struct Cev {} // all components in a stuct...
 //               // struct Db{
 //               //    mouse_over_relative_coord:Option<Coord>,
