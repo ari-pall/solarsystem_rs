@@ -1,23 +1,9 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
-
+#![feature(exclusive_range_pattern)]
 // use macroquad::miniquad::native::linux_x11::libx11::KeyCode;
 
-// use itertools::Itertools;
-
 use {itertools::{iproduct, iterate},
-     // bevy::{animation::prelude::Keyframes,
-     //         app::App,
-     //         ecs::{event::{Event, Events},
-     //               prelude::FromWorld,
-     //               schedule::{IntoSystemDescriptor, Schedule, ShouldRun, Stage, StageLabel, State,
-     //                          StateData, SystemSet, SystemStage},
-     //               system::{Commands, In, Resource},
-     //               world::World},
-     //         prelude::*,
-     //         window::Windows,
-     //         DefaultPlugins}
-     // ,
      macroquad::{color, miniquad::KeyCode, prelude::*},
      std::{boxed::Box,
            collections::{BTreeMap, HashMap},
@@ -34,37 +20,15 @@ use {itertools::{iproduct, iterate},
 fn new<T: Default>() -> T { T::default() }
 fn not(v: bool) -> bool { v.not() }
 
-macro_rules! swap {
-  ($x:expr,$f:expr, $($args:expr),*) => {{
-    $x = $f($x, $($args),*);
-    $x
-  }};
-  ($x:expr,$f:expr) => {{
-    $x = $f($x);
-    $x
-  }};
-}
-// a().to_string().as_str()
-/* -> &'static str */
-// fn to_str<T: ToString>(v: T) -> &'static str { v.to_string().as_str() }
-fn inc<T: Add<Output = T> + From<u8>>(a: T) -> T { a + T::from(1u8) }
-fn a() -> i32 {
-  // KeyCode::LeftShift
-  // iterate(initial_value, f)
-  let mut f = 5;
-  swap!(f, inc);
-  swap!(f, i32::add, 2)
-}
-
 const MOVE_SPEED: f32 = 0.1;
 const LOOK_SPEED: f32 = 0.1;
 const WORLD_UP: Vec3 = vec3(0.0, 1.0, 0.0);
 
 fn conf() -> Conf {
-  Conf { window_title: String::from("Macroquad"),
-         window_width: 1260,
-         window_height: 768,
-         fullscreen: false,
+  Conf { window_title: String::from("solar system"),
+         // window_width: 1260,
+         // window_height: 768,
+         fullscreen: true,
          ..Default::default() }
 }
 
@@ -78,25 +42,6 @@ struct Planet {
   color: Color,
   radius: f32
 }
-// macro_rules! with {
-//   ($($a:expr),*) => {
-//     1
-//   }; // ($a:expr) => {
-//      //   $a + 1
-//      // };
-// }
-// let u = with! {rng = |a, b| rand::gen_range::<f32>(a, b),
-//                x = rng(0.1, 0.9),
-//                y = rng(0.1, 0.9),
-//                z = rng(0.1, 0.9),
-//                Planet { color: Color { a: 1.0,
-//                                        r: x,
-//                                        g: y,
-//                                        b: z },
-//                         pos: vec3(x * 20.0, y * 20.0, z * 20.0),
-//                         vel: vec3(rng(-0.01, 0.01), rng(-0.01, 0.01), rng(-0.01, 0.01)),
-//                         radius: rng(0.1, 0.5) }
-// };
 impl Planet {
   fn random() -> Planet {
     let rng = |a, b| rand::gen_range::<f32>(a, b);
@@ -183,6 +128,7 @@ impl State {
                 xdiff,
                 .. } = self;
     let mouse_delta = mouse_position - last_mouse_position;
+
     State { last_mouse_position: mouse_position,
             pitch: (pitch + mouse_delta.y * delta * -LOOK_SPEED).clamp(-1.5, 1.5),
             yaw: yaw + mouse_delta.x * delta * LOOK_SPEED,
@@ -192,10 +138,12 @@ impl State {
             planets: planets.gravity().movement(),
             position: position + change,
             x: x + xdiff,
-            xdiff: match x {
-              _ if x < Self::LO => 0.04,
-              _ if x > Self::HI => -0.04,
-              _ => xdiff
+            xdiff: if x < Self::LO {
+              0.04
+            } else if x > Self::HI {
+              -0.04
+            } else {
+              xdiff
             },
             ..self }
   }
@@ -214,7 +162,6 @@ async fn main() {
       break;
     }
     if is_key_pressed(KeyCode::Tab) {
-      // swap!(state.grabbed, not);
       state.grabbed = !state.grabbed;
       set_cursor_grab(state.grabbed);
       show_mouse(!state.grabbed);
@@ -226,10 +173,9 @@ async fn main() {
                   (KeyCode::LeftShift, state.up, 1.0),
                   (KeyCode::LeftControl, state.up, -1.0)].into_iter()
                                                          .filter(|(key, ..)| is_key_down(*key))
-                                                         .fold(Vec3::ZERO, |v, (.., dir, sign)| {
-                                                           v + dir * sign * MOVE_SPEED
-                                                         });
-    let mouse_position: Vec2 = mouse_position().into();
+                                                         .map(|(.., dir, sign)| dir * sign * MOVE_SPEED)
+                                                         .fold(Vec3::ZERO, Add::add);
+    let mouse_position = Vec2::from(mouse_position());
     state = state.update(change, mouse_position, delta);
 
     clear_background(BLACK);
@@ -258,7 +204,7 @@ async fn main() {
     // Back to screen space, render some text
 
     set_default_camera();
-    draw_text(a().to_string().as_str(), 10.0, 20.0, 30.0, BLACK);
+    // draw_text(a().to_string().as_str(), 10.0, 20.0, 30.0, BLACK);
     draw_text(format!("Press <TAB> to toggle mouse grab: {}", state.grabbed).as_str(),
               10.0,
               48.0 + 42.0,
@@ -268,98 +214,3 @@ async fn main() {
     next_frame().await
   }
 }
-
-// struct Coord(i32, i32);
-// const ORIGIN: Coord = Coord(0, 0);
-// // struct Keyword(String);
-// enum ItemID {
-//   Loot,
-//   Wood,
-//   Fish,
-// }
-// enum EntityId {
-//   DynamicEntity(u32),
-//   ItemEntity(ItemID),
-//   Tile(Coord),
-// }
-// enum CurrentView {
-//   WorldView,
-//   EntityView,
-//   InventoryView,
-//   CraftingView,
-// }
-// // components
-// struct Name(String);
-// struct Char(char);
-// // struct Color(String);
-// struct Player(bool);
-// struct AttackPlayer(bool);
-// struct DragonAttack(bool);
-// struct EnemyMovement(bool);
-// struct Combat {
-//   hp: u32,
-//   damage: u32,
-// }
-// struct Container(std::collections::HashMap<EntityId, u32>);
-// struct Tile {
-//   walkable: bool,
-//   color: Color,
-// }
-
-// struct ComponentColl<T> {
-//   name: T<Name>,
-//   char: T<Char>,
-//   color: T<Color>,
-//   player: T<Player>,
-//   attackplayer: T<AttackPlayer>,
-//   dragonattack: T<DragonAttack>,
-//   enemymovement: T<EnemyMovement>,
-//   combat: T<Combat>,
-//   container: T<Container>,
-//   tile: T<Tile>,
-// }
-// type EV<C> = std::collections::HashMap<EntityId, C>;
-// fn j() -> EV<Name> { EV::<Name>::default() }
-// #[derive(Default)]
-// struct Cev(ComponentColl<EV>);
-// enum Key {
-//   Left,
-//   Right,
-//   Up,
-//   Down,
-// }
-// #[derive(Default)]
-// struct Keys {
-//   left: bool,
-//   right: bool,
-//   up: bool,
-//   down: bool,
-// }
-// struct GameState {
-//   mouse_over_relative_coord: Option<Coord>,
-//   scroll_pos: u8,
-//   entity_count: u32,
-//   cev: Cev,
-//   selected_entity: Option<EntityId>,
-//   message_log: Vec<String>,
-//   pressed_keys: Keys,
-//   new_pressed_keys: Keys,
-//   newest_pressed_y: Option<Key>,
-//   newest_pressed_x: Option<Key>,
-//   current_view: CurrentView,
-// }
-// impl Default for GameState {
-//   fn default() -> Self {
-//     Self { mouse_over_relative_coord: None,
-//            scroll_pos: 0,
-//            entity_count: 0,
-//            cev: Cev::default(),
-//            selected_entity: None,
-//            message_log: vec![],
-//            pressed_keys: Keys::default(),
-//            new_pressed_keys: Keys::default(),
-//            newest_pressed_y: None,
-//            newest_pressed_x: None,
-//            current_view: CurrentView::WorldView }
-//   }
-// }
