@@ -1,7 +1,9 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 
-use macroquad::miniquad::native::linux_x11::libx11::KeyCode;
+// use macroquad::miniquad::native::linux_x11::libx11::KeyCode;
+
+// use itertools::Itertools;
 
 use {itertools::{iproduct, iterate},
      // bevy::{animation::prelude::Keyframes,
@@ -16,7 +18,7 @@ use {itertools::{iproduct, iterate},
      //         window::Windows,
      //         DefaultPlugins}
      // ,
-     macroquad::{color, miniquad::start, prelude::*},
+     macroquad::{color, miniquad::KeyCode, prelude::*},
      std::{boxed::Box,
            collections::{BTreeMap, HashMap},
            convert::identity,
@@ -74,7 +76,7 @@ struct Planet {
   pos: Vec3,
   vel: Vec3,
   color: Color,
-  radius: f32,
+  radius: f32
 }
 // macro_rules! with {
 //   ($($a:expr),*) => {
@@ -116,17 +118,14 @@ const NUM_PLANETS: usize = 30;
 struct Planets([Planet; NUM_PLANETS]);
 impl Planets {
   fn gravity(self) -> Self {
-    Self(iproduct!(0..NUM_PLANETS, 0..NUM_PLANETS).fold(self.0, |mut p, (i, j)| {
-                                                    if j != i {
-                                                      p[i].vel += 0.1
-                                                                  * p[i].radius.powi(3)
-                                                                  * p[j].radius.powi(3)
-                                                                  * (p[j].pos - p[i].pos)
-                                                                  / p[i].pos.distance(p[j].pos).powi(3);
-                                                      p
-                                                    } else {
-                                                      p
-                                                    }
+    Self(iproduct!(0..NUM_PLANETS, 0..NUM_PLANETS).filter(|(i, j)| i != j)
+                                                  .fold(self.0, |mut p, (i, j)| {
+                                                    p[i].vel += 0.1
+                                                                * p[i].radius.powi(3)
+                                                                * p[j].radius.powi(3)
+                                                                * (p[j].pos - p[i].pos)
+                                                                / p[i].pos.distance(p[j].pos).powi(3);
+                                                    p
                                                   }))
   }
   fn movement(self) -> Self {
@@ -139,7 +138,6 @@ impl Planets {
 struct State {
   planets: Planets,
   x: f32,
-  switch: bool,
   yaw: f32,
   pitch: f32,
   front: Vec3,
@@ -149,6 +147,7 @@ struct State {
   orientation: Quat,
   last_mouse_position: Vec2,
   grabbed: bool,
+  xdiff: f32
 }
 impl Default for State {
   fn default() -> Self {
@@ -157,7 +156,6 @@ impl Default for State {
     let front = vec3_from_spherical_coords(yaw, pitch);
     Self { planets: Planets([(); NUM_PLANETS].map(|_| Planet::random())),
            x: 0.0,
-           switch: false,
            yaw,
            pitch,
            front,
@@ -166,37 +164,45 @@ impl Default for State {
            position: vec3(0.0, 1.0, 0.0),
            orientation: Quat::default(),
            last_mouse_position: mouse_position().into(),
+           xdiff: 0.04,
            grabbed: true }
   }
 }
-impl state {
-  fn update(self, change: Vec3, mouse_position: Vec2) -> Self {
-    let State { front,
-                last_mouse_position,
+impl State {
+  const HI: f32 = 8.0;
+  const LO: f32 = -Self::HI;
+  fn update(self, change: Vec3, mouse_position: Vec2, delta: f32) -> Self {
+    let State { last_mouse_position,
                 pitch,
+                yaw,
+                front,
+                right,
                 planets,
                 position,
-                right,
-                up,
                 x,
-                yaw,
-                grabbed,
+                xdiff,
                 .. } = self;
     let mouse_delta = mouse_position - last_mouse_position;
-    State { planets: planets.gravity().movement(),
-            x: x += if state.switch { 0.04 } else { -0.04 },
+    State { last_mouse_position: mouse_position,
+            pitch: (pitch + mouse_delta.y * delta * -LOOK_SPEED).clamp(-1.5, 1.5),
+            yaw: yaw + mouse_delta.x * delta * LOOK_SPEED,
+            front: vec3_from_spherical_coords(yaw, pitch),
+            right: front.cross(WORLD_UP).normalize(),
+            up: right.cross(front).normalize(),
+            planets: planets.gravity().movement(),
             position: position + change,
-            last_mouse_position: mouse_position }
-    // lost progress...
+            x: x + xdiff,
+            xdiff: match x {
+              _ if x < Self::LO => 0.04,
+              _ if x > Self::HI => -0.04,
+              _ => xdiff
+            },
+            ..self }
   }
 }
-// swap!(state.position, Add::add, state.front * MOVE_SPEED);
-// const LOWER_BOUND: f32 = -8.0;
-// const UPPER_BOUND: f32 = -LOWER_BOUND;
 #[macroquad::main(conf)]
 async fn main() {
   let mut state = State::default();
-  let bounds = 8.0;
   set_cursor_grab(state.grabbed);
   show_mouse(false);
   loop {
@@ -213,45 +219,18 @@ async fn main() {
       set_cursor_grab(state.grabbed);
       show_mouse(!state.grabbed);
     }
-    let mut change = Vec3::ZERO;
-    for (key, dir, sign) in [(KeyCode::W, state.front, 1.0),
-                             (KeyCode::A, state.right, -1.0),
-                             (KeyCode::S, state.front, -1.0),
-                             (KeyCode::D, state.right, 1.0),
-                             (KeyCode::LeftShift, state.up, 1.0),
-                             (KeyCode::LeftControl, state.up, -1.0)]
-    {
-      if is_key_down(key) {
-        change += dir * sign * MOVE_SPEED;
-      }
-    }
-
+    let change = [(KeyCode::W, state.front, 1.0),
+                  (KeyCode::A, state.right, -1.0),
+                  (KeyCode::S, state.front, -1.0),
+                  (KeyCode::D, state.right, 1.0),
+                  (KeyCode::LeftShift, state.up, 1.0),
+                  (KeyCode::LeftControl, state.up, -1.0)].into_iter()
+                                                         .filter(|(key, ..)| is_key_down(*key))
+                                                         .fold(Vec3::ZERO, |v, (.., dir, sign)| {
+                                                           v + dir * sign * MOVE_SPEED
+                                                         });
     let mouse_position: Vec2 = mouse_position().into();
-    let mouse_delta = mouse_position - state.last_mouse_position;
-    // state.last_mouse_position = mouse_position;
-    state = state.update(change, mouse_position);
-
-    // use quaternions instead of Vec3's?
-    // Quat::clone_from(&mut self, source)
-    state.yaw += mouse_delta.x * delta * LOOK_SPEED;
-    state.pitch += mouse_delta.y * delta * -LOOK_SPEED;
-
-    // swap!(state.pitch, clamp, -1.5, 1.5);
-    state.pitch = state.pitch.clamp(-1.5, 1.5);
-
-    state.front = vec3_from_spherical_coords(state.yaw, state.pitch);
-
-    state.right = state.front.cross(WORLD_UP).normalize();
-    state.up = state.right.cross(state.front).normalize();
-
-    state.x += if state.switch { 0.04 } else { -0.04 };
-    // match state.x {
-    //   LOWER_BOUND..=UPPER_BOUND => (),
-    //   _ => state.switch = !state.switch,
-    // };
-    if state.x >= bounds || state.x <= -bounds {
-      state.switch = !state.switch;
-    }
+    state = state.update(change, mouse_position, delta);
 
     clear_background(BLACK);
 
@@ -272,13 +251,9 @@ async fn main() {
     draw_cube_wires(vec3(0., 1., 6.), vec3(2., 2., 2.), BLUE);
     draw_cube_wires(vec3(2., 1., 2.), vec3(2., 2., 2.), RED);
 
-    // let State { planets: Planets(p), .. } = &state;
     for Planet { pos, color, radius, .. } in &state.planets.0 {
       draw_sphere(*pos, *radius, None, *color);
     }
-    // state = State { planets: state.planets.gravity().movement(),
-    //                 ..state };
-    state.planets = state.planets.gravity().movement();
 
     // Back to screen space, render some text
 
@@ -294,39 +269,97 @@ async fn main() {
   }
 }
 
-struct Coord(i32, i32);
-const ORIGIN: Coord = Coord(0, 0);
-struct Keyword(String);
-enum EntityId {
-  DynamicEntity(u32),
-  ItemEntity(Keyword),
-  Tile(Coord),
-}
-enum CurrentView {
-  WorldView,
-  InventoryView,
-}
-enum Key {
-  Left,
-  Right,
-  Up,
-  Down,
-}
-// struct Cev {} // all components in a stuct...
-//               // struct Db{
-//               //    mouse_over_relative_coord:Option<Coord>,
-//               //    scroll_pos:u8,
-//               //    entity_count:Int,
-//               //    cev:Cev,
-//               //    selected_entity:Option<EntityId>,
-//               //    // history                   '()
-//               //    reverse_time:bool,
-//               //    time:u32,
-//               //    message_log:Vec<String>,
-//               //    pressed_keys              #{}
-//               //    new_pressed_keys          #{}
-//               //    newest_pressed_y:Key,
-//               //    newest_pressed_x:Key,
-//               //    current_view:CurrentView
-//               // }
-// impl Default for Db {}
+// struct Coord(i32, i32);
+// const ORIGIN: Coord = Coord(0, 0);
+// // struct Keyword(String);
+// enum ItemID {
+//   Loot,
+//   Wood,
+//   Fish,
+// }
+// enum EntityId {
+//   DynamicEntity(u32),
+//   ItemEntity(ItemID),
+//   Tile(Coord),
+// }
+// enum CurrentView {
+//   WorldView,
+//   EntityView,
+//   InventoryView,
+//   CraftingView,
+// }
+// // components
+// struct Name(String);
+// struct Char(char);
+// // struct Color(String);
+// struct Player(bool);
+// struct AttackPlayer(bool);
+// struct DragonAttack(bool);
+// struct EnemyMovement(bool);
+// struct Combat {
+//   hp: u32,
+//   damage: u32,
+// }
+// struct Container(std::collections::HashMap<EntityId, u32>);
+// struct Tile {
+//   walkable: bool,
+//   color: Color,
+// }
+
+// struct ComponentColl<T> {
+//   name: T<Name>,
+//   char: T<Char>,
+//   color: T<Color>,
+//   player: T<Player>,
+//   attackplayer: T<AttackPlayer>,
+//   dragonattack: T<DragonAttack>,
+//   enemymovement: T<EnemyMovement>,
+//   combat: T<Combat>,
+//   container: T<Container>,
+//   tile: T<Tile>,
+// }
+// type EV<C> = std::collections::HashMap<EntityId, C>;
+// fn j() -> EV<Name> { EV::<Name>::default() }
+// #[derive(Default)]
+// struct Cev(ComponentColl<EV>);
+// enum Key {
+//   Left,
+//   Right,
+//   Up,
+//   Down,
+// }
+// #[derive(Default)]
+// struct Keys {
+//   left: bool,
+//   right: bool,
+//   up: bool,
+//   down: bool,
+// }
+// struct GameState {
+//   mouse_over_relative_coord: Option<Coord>,
+//   scroll_pos: u8,
+//   entity_count: u32,
+//   cev: Cev,
+//   selected_entity: Option<EntityId>,
+//   message_log: Vec<String>,
+//   pressed_keys: Keys,
+//   new_pressed_keys: Keys,
+//   newest_pressed_y: Option<Key>,
+//   newest_pressed_x: Option<Key>,
+//   current_view: CurrentView,
+// }
+// impl Default for GameState {
+//   fn default() -> Self {
+//     Self { mouse_over_relative_coord: None,
+//            scroll_pos: 0,
+//            entity_count: 0,
+//            cev: Cev::default(),
+//            selected_entity: None,
+//            message_log: vec![],
+//            pressed_keys: Keys::default(),
+//            new_pressed_keys: Keys::default(),
+//            newest_pressed_y: None,
+//            newest_pressed_x: None,
+//            current_view: CurrentView::WorldView }
+//   }
+// }
