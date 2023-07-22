@@ -6,7 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+derive_more = "0.99.17"
 itertools = "0.11.0"
+list_comprehension = "0.1.5"
 macroquad = "0.4.1"
 # macroquad = "0.3.25"
 # itertools = "0.10.5"

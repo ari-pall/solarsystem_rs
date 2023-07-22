@@ -1,9 +1,10 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 #![feature(exclusive_range_pattern)]
-// use macroquad::miniquad::native::linux_x11::libx11::KeyCode;
 
-use {itertools::{iproduct, iterate},
+use {derive_more::From,
+     itertools::{iproduct, iterate},
+     list_comprehension::comp,
      macroquad::{color, miniquad::KeyCode, prelude::*},
      std::{boxed::Box,
            collections::{BTreeMap, HashMap},
@@ -59,25 +60,35 @@ impl Planet {
 }
 
 const NUM_PLANETS: usize = 30;
-// #[derive(Clone)]
-struct Planets([Planet; NUM_PLANETS]);
-impl Planets {
-  fn gravity(self) -> Self {
-    Self(iproduct!(0..NUM_PLANETS, 0..NUM_PLANETS).filter(|(i, j)| i != j)
-                                                  .fold(self.0, |mut p, (i, j)| {
-                                                    p[i].vel += 0.1
-                                                                * p[i].radius.powi(3)
-                                                                * p[j].radius.powi(3)
-                                                                * (p[j].pos - p[i].pos)
-                                                                / p[i].pos.distance(p[j].pos).powi(3);
-                                                    p
-                                                  }))
+// #[derive(From)]
+struct Planets(Vec<Planet>);
+impl Default for Planets {
+  fn default() -> Self {
+    Self(comp!(
+      if i == 0 { Planet { pos: Vec3 { x: 3.1,
+                                       y: 1.3,
+                                       z: 2.3 },
+                           vel: Vec3::default(),
+                           color: Color::from_rgba(255, 255, 0, 255),
+                           radius: 1.3 }
+      } else {
+        Planet::random()
+      }, i in 0..NUM_PLANETS))
   }
-  fn movement(self) -> Self {
-    Self(self.0.map(|mut planet| {
-                 planet.pos += planet.vel;
-                 planet
-               }))
+}
+impl Planets {
+  fn movement(self) -> Self { Self(comp!(Planet{pos: p.pos+p.vel,..p}, p in self.0)) }
+  fn gravity(self) -> Self {
+    Self(comp!((i,j),i in 0..NUM_PLANETS,j in 0..i).into_iter()
+                                                   .fold(self.0, |mut p, (i, j)| {
+                                                     let dist = p[i].pos.distance(p[j].pos);
+                                                     let posdiff = p[j].pos - p[i].pos;
+                                                     let pimass = p[i].radius.powi(3);
+                                                     let pjmass = p[j].radius.powi(3);
+                                                     p[i].vel +=
+                                                       0.1 * pimass * pjmass * posdiff / dist.powi(3);
+                                                     p
+                                                   }))
   }
 }
 struct State {
@@ -99,7 +110,7 @@ impl Default for State {
     let yaw = 1.18;
     let pitch = 1.18;
     let front = vec3_from_spherical_coords(yaw, pitch);
-    Self { planets: Planets([(); NUM_PLANETS].map(|_| Planet::random())),
+    Self { planets: Planets::default(),
            x: 0.0,
            yaw,
            pitch,
@@ -117,36 +128,39 @@ impl State {
   const HI: f32 = 8.0;
   const LO: f32 = -Self::HI;
   fn update(self, change: Vec3, mouse_position: Vec2, delta: f32) -> Self {
-    let State { last_mouse_position,
-                pitch,
-                yaw,
-                front,
-                right,
-                planets,
-                position,
-                x,
-                xdiff,
-                .. } = self;
+    let Self { last_mouse_position,
+               pitch,
+               yaw,
+               front,
+               right,
+               planets,
+               position,
+               x,
+               xdiff,
+               .. } = self;
     let mouse_delta = mouse_position - last_mouse_position;
 
-    State { last_mouse_position: mouse_position,
-            pitch: (pitch + mouse_delta.y * delta * -LOOK_SPEED).clamp(-1.5, 1.5),
-            yaw: yaw + mouse_delta.x * delta * LOOK_SPEED,
-            front: vec3_from_spherical_coords(yaw, pitch),
-            right: front.cross(WORLD_UP).normalize(),
-            up: right.cross(front).normalize(),
-            planets: planets.gravity().movement(),
-            position: position + change,
-            x: x + xdiff,
-            xdiff: if x < Self::LO {
-              0.04
-            } else if x > Self::HI {
-              -0.04
-            } else {
-              xdiff
-            },
-            ..self }
+    Self { last_mouse_position: mouse_position,
+           pitch: (pitch + mouse_delta.y * delta * -LOOK_SPEED).clamp(-1.5, 1.5),
+           yaw: yaw + mouse_delta.x * delta * LOOK_SPEED,
+           front: vec3_from_spherical_coords(yaw, pitch),
+           right: front.cross(WORLD_UP).normalize(),
+           up: right.cross(front).normalize(),
+           planets: planets.gravity().movement(),
+           position: position + change,
+           x: x + xdiff,
+           xdiff: if x < Self::LO {
+             0.04
+           } else if x > Self::HI {
+             -0.04
+           } else {
+             xdiff
+           },
+           ..self }
   }
+}
+pub fn sum<T: Default + std::ops::Add<Output = T>>(coll: impl IntoIterator<Item = T>) -> T {
+  coll.into_iter().fold(T::default(), T::add)
 }
 #[macroquad::main(conf)]
 async fn main() {
@@ -166,15 +180,14 @@ async fn main() {
       set_cursor_grab(state.grabbed);
       show_mouse(!state.grabbed);
     }
-    let change = [(KeyCode::W, state.front, 1.0),
-                  (KeyCode::A, state.right, -1.0),
-                  (KeyCode::S, state.front, -1.0),
-                  (KeyCode::D, state.right, 1.0),
-                  (KeyCode::LeftShift, state.up, 1.0),
-                  (KeyCode::LeftControl, state.up, -1.0)].into_iter()
-                                                         .filter(|(key, ..)| is_key_down(*key))
-                                                         .map(|(.., dir, sign)| dir * sign * MOVE_SPEED)
-                                                         .fold(Vec3::ZERO, Add::add);
+    let change = MOVE_SPEED
+                 * sum(comp!(dir,
+                       (key, dir) in [(KeyCode::W, state.front),
+                                      (KeyCode::A, -state.right),
+                                      (KeyCode::S, -state.front),
+                                      (KeyCode::D, state.right),
+                                      (KeyCode::LeftShift, state.up),
+                                      (KeyCode::LeftControl, -state.up)],is_key_down(key)));
     let mouse_position = Vec2::from(mouse_position());
     state = state.update(change, mouse_position, delta);
 
@@ -189,13 +202,13 @@ async fn main() {
 
     draw_grid(20, 1., DARKGRAY, GRAY);
 
-    draw_line_3d(vec3(state.x, 0.0, state.x),
-                 vec3(5.0, 5.0, 5.0),
-                 Color::new(1.0, 1.0, 0.0, 1.0));
+    // draw_line_3d(vec3(state.x, 0.0, state.x),
+    //              vec3(5.0, 5.0, 5.0),
+    //              Color::new(1.0, 1.0, 0.0, 1.0));
 
-    draw_cube_wires(vec3(0., 1., -6.), vec3(2., 2., 2.), GREEN);
-    draw_cube_wires(vec3(0., 1., 6.), vec3(2., 2., 2.), BLUE);
-    draw_cube_wires(vec3(2., 1., 2.), vec3(2., 2., 2.), RED);
+    // draw_cube_wires(vec3(0., 1., -6.), vec3(2., 2., 2.), GREEN);
+    // draw_cube_wires(vec3(0., 1., 6.), vec3(2., 2., 2.), BLUE);
+    // draw_cube_wires(vec3(2., 1., 2.), vec3(2., 2., 2.), RED);
 
     for Planet { pos, color, radius, .. } in &state.planets.0 {
       draw_sphere(*pos, *radius, None, *color);
