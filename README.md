@@ -1,4 +1,4 @@
-# gamething_rs
+# solarsystem_rs
 
 <https://ari-pall.github.io/solarsystem_rs//>
 
