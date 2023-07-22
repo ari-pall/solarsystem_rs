@@ -1,9 +1,8 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
-#![feature(exclusive_range_pattern)]
 
 use {derive_more::From,
-     itertools::{iproduct, iterate},
+     // iter_comprehensions::sum,
      list_comprehension::comp,
      macroquad::{color, miniquad::KeyCode, prelude::*},
      std::{boxed::Box,
@@ -76,24 +75,26 @@ impl Default for Planets {
       }, i in 0..NUM_PLANETS))
   }
 }
+pub fn fold<T, G>(init: T, f: impl Fn(T, G) -> T, coll: impl IntoIterator<Item = G>) -> T {
+  coll.into_iter().fold(init, f)
+}
 impl Planets {
   fn movement(self) -> Self { Self(comp!(Planet{pos: p.pos+p.vel,..p}, p in self.0)) }
   fn gravity(self) -> Self {
-    Self(comp!((i,j),i in 0..NUM_PLANETS,j in 0..i).into_iter()
-                                                   .fold(self.0, |mut p, (i, j)| {
-                                                     let dist = p[i].pos.distance(p[j].pos);
-                                                     let posdiff = p[j].pos - p[i].pos;
-                                                     let pimass = p[i].radius.powi(3);
-                                                     let pjmass = p[j].radius.powi(3);
-                                                     p[i].vel +=
-                                                       0.1 * pimass * pjmass * posdiff / dist.powi(3);
-                                                     p
-                                                   }))
+    Self(fold(self.0,
+              |mut p, (i, j)| {
+                let dist = p[i].pos.distance(p[j].pos);
+                let posdiff = p[j].pos - p[i].pos;
+                let pimass = p[i].radius.powi(3);
+                let pjmass = p[j].radius.powi(3);
+                p[i].vel += 0.1 * pimass * pjmass * posdiff / dist.powi(3);
+                p
+              },
+              comp!((i,j), i in 0..NUM_PLANETS, j in 0..i)))
   }
 }
 struct State {
   planets: Planets,
-  x: f32,
   yaw: f32,
   pitch: f32,
   front: Vec3,
@@ -102,8 +103,7 @@ struct State {
   position: Vec3,
   orientation: Quat,
   last_mouse_position: Vec2,
-  grabbed: bool,
-  xdiff: f32
+  grabbed: bool
 }
 impl Default for State {
   fn default() -> Self {
@@ -111,7 +111,6 @@ impl Default for State {
     let pitch = 1.18;
     let front = vec3_from_spherical_coords(yaw, pitch);
     Self { planets: Planets::default(),
-           x: 0.0,
            yaw,
            pitch,
            front,
@@ -120,7 +119,6 @@ impl Default for State {
            position: vec3(0.0, 1.0, 0.0),
            orientation: Quat::default(),
            last_mouse_position: mouse_position().into(),
-           xdiff: 0.04,
            grabbed: true }
   }
 }
@@ -135,8 +133,6 @@ impl State {
                right,
                planets,
                position,
-               x,
-               xdiff,
                .. } = self;
     let mouse_delta = mouse_position - last_mouse_position;
 
@@ -148,14 +144,6 @@ impl State {
            up: right.cross(front).normalize(),
            planets: planets.gravity().movement(),
            position: position + change,
-           x: x + xdiff,
-           xdiff: if x < Self::LO {
-             0.04
-           } else if x > Self::HI {
-             -0.04
-           } else {
-             xdiff
-           },
            ..self }
   }
 }
@@ -180,14 +168,22 @@ async fn main() {
       set_cursor_grab(state.grabbed);
       show_mouse(!state.grabbed);
     }
+    // let change = MOVE_SPEED
+    //              * sum!((key,dir) in [(KeyCode::W, state.front),
+    //                              (KeyCode::A, -state.right),
+    //                              (KeyCode::S, -state.front),
+    //                              (KeyCode::D, state.right),
+    //                              (KeyCode::LeftShift, state.up),
+    //                              (KeyCode::LeftControl, -state.up)]
+    //               , is_key_down(key) ,dir);
     let change = MOVE_SPEED
-                 * sum(comp!(dir,
-                       (key, dir) in [(KeyCode::W, state.front),
-                                      (KeyCode::A, -state.right),
-                                      (KeyCode::S, -state.front),
-                                      (KeyCode::D, state.right),
-                                      (KeyCode::LeftShift, state.up),
-                                      (KeyCode::LeftControl, -state.up)],is_key_down(key)));
+                 * sum(comp!(dir, (key, dir) in [(KeyCode::W, state.front),
+                                                 (KeyCode::A, -state.right),
+                                                 (KeyCode::S, -state.front),
+                                                 (KeyCode::D, state.right),
+                                                 (KeyCode::LeftShift, state.up),
+                                                 (KeyCode::LeftControl, -state.up)]
+                             , is_key_down(key)));
     let mouse_position = Vec2::from(mouse_position());
     state = state.update(change, mouse_position, delta);
 
