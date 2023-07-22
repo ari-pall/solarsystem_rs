@@ -52,9 +52,9 @@ impl Planet {
                             r: x,
                             g: y,
                             b: z },
-             pos: vec3(x * 20.0, y * 20.0, z * 20.0),
-             vel: vec3(rng(-0.01, 0.01), rng(-0.01, 0.01), rng(-0.01, 0.01)),
-             radius: rng(0.1, 0.5) }
+             pos: vec3(x * 20.0 - 4.0, y * 20.0 - 4.0, z * 20.0 - 4.0),
+             vel: vec3(rng(-0.02, 0.02), rng(-0.02, 0.02), rng(-0.02, 0.02)),
+             radius: rng(0.1, 0.3) }
   }
 }
 
@@ -87,7 +87,9 @@ impl Planets {
                 let posdiff = p[j].pos - p[i].pos;
                 let pimass = p[i].radius.powi(3);
                 let pjmass = p[j].radius.powi(3);
-                p[i].vel += 0.1 * pimass * pjmass * posdiff / dist.powi(3);
+                let g = 0.003;
+                p[i].vel += g * pjmass * posdiff / dist.powi(3);
+                p[j].vel -= g * pimass * posdiff / dist.powi(3);
                 p
               },
               comp!((i,j), i in 0..NUM_PLANETS, j in 0..i)))
@@ -123,8 +125,8 @@ impl Default for State {
   }
 }
 impl State {
-  const HI: f32 = 8.0;
-  const LO: f32 = -Self::HI;
+  // const HI: f32 = 8.0;
+  // const LO: f32 = -Self::HI;
   fn update(self, change: Vec3, mouse_position: Vec2, delta: f32) -> Self {
     let Self { last_mouse_position,
                pitch,
