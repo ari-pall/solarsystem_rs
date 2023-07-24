@@ -2,13 +2,16 @@
 #![allow(dead_code)]
 
 use {derive_more::From,
+     itertools::{iproduct, Combinations, Itertools},
      // iter_comprehensions::sum,
      list_comprehension::comp,
      macroquad::{color, miniquad::KeyCode, prelude::*},
      std::{boxed::Box,
+           collections::HashSet,
            collections::{BTreeMap, HashMap},
            convert::identity,
            fmt::{Debug, Display, Result},
+           hash::Hash,
            io::{self, stdin, stdout, BufRead, Error, Lines, Read, StdinLock, Write},
            iter::{IntoIterator, Map},
            num,
@@ -21,8 +24,8 @@ fn new<T: Default>() -> T { T::default() }
 fn not(v: bool) -> bool { v.not() }
 
 const MOVE_SPEED: f32 = 0.12;
-const LOOK_SPEED: f32 = 0.1;
-const WORLD_UP: Vec3 = vec3(0.0, 1.0, 0.0);
+const LOOK_SPEED: f32 = 0.08;
+const WORLD_UP: Vec3 = Vec3::new(0.0, 1.0, 0.0);
 
 fn conf() -> Conf {
   Conf { window_title: String::from("solar system"),
@@ -33,64 +36,111 @@ fn conf() -> Conf {
 fn vec3_from_spherical_coords(yaw: f32, pitch: f32) -> Vec3 {
   vec3(yaw.cos() * pitch.cos(), pitch.sin(), yaw.sin() * pitch.cos()).normalize()
 }
-// #[derive(Copy, Clone)]
+#[derive(Copy, Clone)]
 struct Planet {
-  pos: Vec3,
-  vel: Vec3,
+  pos: DVec3,
+  vel: DVec3,
   color: Color,
-  radius: f32
+  radius: f64
 }
 impl Planet {
+  fn star() -> Planet {
+    Planet { pos: DVec3 { x: 3.1,
+                          y: 1.3,
+                          z: 2.3 },
+             vel: DVec3::default(),
+             color: Color::from_rgba(255, 255, 0, 255),
+             radius: 1.3 }
+  }
   fn random() -> Planet {
     let rng = |a, b| rand::gen_range::<f32>(a, b);
-    let x = rng(0.1, 0.9);
-    let y = rng(0.1, 0.9);
-    let z = rng(0.1, 0.9);
-    Planet { color: Color { a: 1.0,
-                            r: x,
-                            g: y,
-                            b: z },
-             pos: vec3(x * 20.0 - 5.0, y * 20.0 - 5.0, z * 20.0 - 5.0),
-             vel: vec3(rng(-0.02, 0.02), rng(-0.02, 0.02), rng(-0.02, 0.02)),
-             radius: rng(0.1, 0.3) }
+    let r = rng(0.1, 0.9);
+    let g = rng(0.1, 0.9);
+    let b = rng(0.1, 0.9);
+    Planet { color: Color { a: 1.0, r, g, b },
+             pos: dvec3(r as f64 * 50.0 - 25.0,
+                        g as f64 * 50.0 - 25.0,
+                        b as f64 * 50.0 - 25.0),
+             vel: dvec3(rng(-0.03, 0.03) as f64,
+                        rng(-0.03, 0.03) as f64,
+                        rng(-0.03, 0.03) as f64),
+             radius: rng(0.1, 0.4) as f64 }
   }
 }
 
-const NUM_PLANETS: usize = 30;
-// #[derive(From)]
-struct Planets(Vec<Planet>);
+fn hashmap<K: Eq + Hash, V>(coll: impl IntoIterator<Item = (K, V)>) -> HashMap<K, V> {
+  coll.into_iter().collect()
+}
+const NUM_PLANETS: usize = 80;
+struct Planets(HashMap<usize, Planet>);
 impl Default for Planets {
   fn default() -> Self {
-    Self(comp!(
-      if i == 0 { Planet { pos: Vec3 { x: 3.1,
-                                       y: 1.3,
-                                       z: 2.3 },
-                           vel: Vec3::default(),
-                           color: Color::from_rgba(255, 255, 0, 255),
-                           radius: 1.3 }
-      } else {
-        Planet::random()
-      }, i in 0..NUM_PLANETS))
+    Self(hashmap(comp!(
+      (i, Planet::random()), i in 0..NUM_PLANETS)))
   }
 }
 pub fn fold<T, G>(f: impl Fn(T, G) -> T, init: T, coll: impl IntoIterator<Item = G>) -> T {
   coll.into_iter().fold(init, f)
 }
 impl Planets {
-  fn movement(self) -> Self { Self(comp!(Planet{pos: p.pos+p.vel,..p}, p in self.0)) }
+  fn movement(mut self) -> Self {
+    self.0.values_mut().for_each(|planet| {
+                         planet.pos += planet.vel;
+                       });
+    self
+  }
   fn gravity(self) -> Self {
-    Self(fold(|mut p, (i, j)| {
-                let dist = p[i].pos.distance(p[j].pos);
-                let posdiff = p[j].pos - p[i].pos;
-                let pjmass = p[j].radius.powi(3);
-                let g = 0.003;
-                p[i].vel += g * pjmass * posdiff / dist.powi(3);
-                p
-              },
-              self.0,
-              comp!((i,j), i in 0..NUM_PLANETS, j in 0..NUM_PLANETS, i != j)))
+    let keypairs = comp!((i.clone(), j.clone()), &i in self.0.keys(), &j in self.0.keys(), i!=j);
+    fold(|Self(mut p), (i, j)| {
+           let pi = p.get(&i).unwrap();
+           let pj = p.get(&j).unwrap();
+           let posdiff = pj.pos - pi.pos;
+           let dist = posdiff.length();
+           let pjmass = pj.radius.powi(3);
+           let g = 0.027;
+           p.get_mut(&i).unwrap().vel += g * pjmass * posdiff / dist.powi(3);
+           Self(p)
+         },
+         self,
+         keypairs)
+  }
+  fn collisions(self) -> Self {
+    let keypairs = comp!((i.clone(), j.clone()), &i in self.0.keys(), &j in self.0.keys(), i<j);
+    fold(|Self(mut p), (i, j)| {
+           let pi = p.get(&i);
+           let pj = p.get(&j);
+           match (pi, pj) {
+             (Some(pi), Some(pj)) => {
+               let posdiff = pj.pos - pi.pos;
+               let dist = posdiff.length();
+               if dist < pi.radius + pj.radius {
+                 let pimass = pi.radius.powi(3);
+                 let pjmass = pj.radius.powi(3);
+                 let total_mass = pimass + pjmass;
+                 let pos = (pi.pos * pimass + pj.pos * pjmass) / total_mass;
+                 let vel = (pi.vel * pimass + pj.vel * pjmass) / total_mass;
+                 let r = pi.color.r.max(pj.color.r);
+                 let g = pi.color.g.max(pj.color.g);
+                 let b = pi.color.b.max(pj.color.b);
+                 let color = Color { r, g, b, a: 1.0 };
+                 let radius = total_mass.cbrt();
+                 p.insert(i, Planet { pos,
+                                      vel,
+                                      color,
+                                      radius });
+
+                 p.remove(&j);
+               }
+             }
+             _ => ()
+           }
+           Self(p)
+         },
+         self,
+         keypairs)
   }
 }
+
 struct State {
   planets: Planets,
   yaw: f32,
@@ -124,7 +174,7 @@ impl State {
     Self { last_mouse_position: mouse_position,
            pitch: (pitch + mouse_delta.y * delta * -LOOK_SPEED).clamp(-1.5, 1.5),
            yaw: yaw + mouse_delta.x * delta * LOOK_SPEED,
-           planets: planets.gravity().movement(),
+           planets: planets.gravity().movement().collisions(),
            position: position + change,
            ..self }
   }
@@ -163,26 +213,40 @@ async fn main() {
                              , is_key_down(key)));
     let mouse_position = Vec2::from(mouse_position());
     state = state.update(change, mouse_position, delta);
+    let State { planets,
+                position,
+                grabbed,
+                .. } = &state;
 
     clear_background(BLACK);
 
     // Going 3d!
 
-    set_camera(&Camera3D { position: state.position,
+    set_camera(&Camera3D { position: *position,
                            up,
-                           target: state.position + front,
+                           target: *position + front,
                            ..Default::default() });
 
     draw_grid(20, 1., DARKGRAY, GRAY);
 
-    for Planet { pos, color, radius, .. } in &state.planets.0 {
-      draw_sphere(*pos, *radius, None, *color);
+    for (..,
+         Planet { pos: DVec3 { x, y, z },
+                  color,
+                  radius,
+                  .. }) in &planets.0
+    {
+      draw_sphere(Vec3 { x: *x as f32,
+                         y: *y as f32,
+                         z: *z as f32 },
+                  *radius as f32,
+                  None,
+                  *color);
     }
 
     // Back to screen space, render some text
 
     set_default_camera();
-    draw_text(format!("Press <TAB> to toggle mouse grab: {}", state.grabbed).as_str(),
+    draw_text(format!("Press <TAB> to toggle mouse grab: {}", grabbed).as_str(),
               10.0,
               48.0 + 42.0,
               30.0,
