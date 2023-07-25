@@ -71,7 +71,7 @@ fn hashmap<K: Eq + Hash, V>(coll: impl IntoIterator<Item = (K, V)>) -> HashMap<K
   coll.into_iter().collect()
 }
 // fn collect<C:FromIterator< >>()
-const NUM_PLANETS: usize = 80;
+const NUM_PLANETS: usize = 60;
 struct Planets([Option<Planet>; NUM_PLANETS]);
 impl Default for Planets {
   fn default() -> Self { Self([Some(Planet::random()); NUM_PLANETS].map(|_| Some(Planet::random()))) }
@@ -93,7 +93,7 @@ impl Planets {
              let dist = posdiff.length();
              let pimass = pi.radius.powi(3);
              let pjmass = pj.radius.powi(3);
-             let g = 0.027;
+             let g = 0.037;
              p[i] = Some(Planet { vel: pi.vel + g * pjmass * posdiff / dist.powi(3),
                                   ..pi });
              p[j] = Some(Planet { vel: pj.vel - g * pimass * posdiff / dist.powi(3),
@@ -110,6 +110,7 @@ impl Planets {
           let pimass = pi.radius.powi(3);
           let pjmass = pj.radius.powi(3);
           let total_mass = pimass + pjmass;
+          p[j] = None;
           p[i] = Some(Planet { pos: (pi.pos * pimass + pj.pos * pjmass) / total_mass,
                                vel: (pi.vel * pimass + pj.vel * pjmass) / total_mass,
                                color:Color { r: pi.color.r.max(pj.color.r),
@@ -117,7 +118,6 @@ impl Planets {
                                              b: pi.color.b.max(pj.color.b),
                                              a: 1.0 },
                                radius: total_mass.cbrt() });
-          p[j] = None;
         }
            Self(p)
          },
