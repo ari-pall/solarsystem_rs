@@ -58,12 +58,12 @@ impl Planet {
     let g = rng(0.1, 0.99) as f32;
     let b = rng(0.1, 0.99) as f32;
     Planet { color: Color { a: 1.0, r, g, b },
-             pos: dvec3(r as f64 * 50.0 - 25.0,
-                        g as f64 * 50.0 - 25.0,
-                        b as f64 * 50.0 - 25.0),
-             vel: dvec3(rng(-0.03, 0.03) as f64,
-                        rng(-0.03, 0.03) as f64,
-                        rng(-0.03, 0.03) as f64),
+             pos: dvec3(r as f64 * 70.0 - 25.0,
+                        g as f64 * 70.0 - 25.0,
+                        b as f64 * 70.0 - 25.0),
+             vel: dvec3(rng(-0.04, 0.04) as f64,
+                        rng(-0.04, 0.04) as f64,
+                        rng(-0.04, 0.04) as f64),
              radius: rng(0.1, 0.4) as f64 }
   }
 }
@@ -71,58 +71,68 @@ fn hashmap<K: Eq + Hash, V>(coll: impl IntoIterator<Item = (K, V)>) -> HashMap<K
   coll.into_iter().collect()
 }
 // fn collect<C:FromIterator< >>()
-const NUM_PLANETS: usize = 80;
-struct Planets(HashMap<usize, Planet>);
+const NUM_PLANETS: usize = 150;
+struct Planets([Option<Planet>; NUM_PLANETS]);
 impl Default for Planets {
-  fn default() -> Self { Self((0..NUM_PLANETS).map(|i| (i, Planet::random())).collect()) }
+  fn default() -> Self { Self([Some(Planet::random()); NUM_PLANETS].map(|_| Some(Planet::random()))) }
 }
 pub fn fold<T, G>(f: impl Fn(T, G) -> T, init: T, coll: impl IntoIterator<Item = G>) -> T {
   coll.into_iter().fold(init, f)
 }
 impl Planets {
-  fn movement(mut self) -> Self {
-    self.0.values_mut().for_each(|planet| {
-                         planet.pos += planet.vel;
-                       });
-    self
+  fn movement(self) -> Self {
+    Self(self.0.map(|op| {
+                 op.map(|p| Planet { pos: p.pos + p.vel,
+                                     ..p })
+               }))
   }
   fn gravity(self) -> Self {
-    comp!((i, j), &i in self.0.keys(), &j in self.0.keys(), i < j).into_iter()
+    comp!((i, j), i in 0..NUM_PLANETS, j in 0..NUM_PLANETS, i < j).into_iter()
                                                                   .fold(self, |Self(mut p), (i, j)| {
-                                                                    let pi = p.get(&i).unwrap();
-                                                                    let pj = p.get(&j).unwrap();
-                                                                    let posdiff = pj.pos - pi.pos;
-                                                                    let dist = posdiff.length();
-                                                                    let pimass = pi.radius.powi(3);
-                                                                    let pjmass = pj.radius.powi(3);
-                                                                    let g = 0.027;
-                                                                    p.get_mut(&i).unwrap().vel +=
-                                                                      g * pjmass * posdiff / dist.powi(3);
-                                                                    p.get_mut(&j).unwrap().vel -=
-                                                                      g * pimass * posdiff / dist.powi(3);
+                                                                    if let (Some(pi), Some(pj)) =
+                                                                      (p[i], p[j])
+                                                                    {
+                                                                      let posdiff = pj.pos - pi.pos;
+                                                                      let dist = posdiff.length();
+                                                                      let pimass = pi.radius.powi(3);
+                                                                      let pjmass = pj.radius.powi(3);
+                                                                      let g = 0.027;
+                                                                      p[i] =
+                                                                        Some(Planet { vel:
+                                                                                        pi.vel
+                                                                                        + g
+                                                                                          * pjmass
+                                                                                          * posdiff
+                                                                                          / dist.powi(3),
+                                                                                      ..pi });
+                                                                      p[j] =
+                                                                        Some(Planet { vel:
+                                                                                        pj.vel
+                                                                                        - g
+                                                                                          * pimass
+                                                                                          * posdiff
+                                                                                          / dist.powi(3),
+                                                                                      ..pj });
+                                                                    }
                                                                     Self(p)
                                                                   })
   }
   fn collisions(self) -> Self {
-    comp!((i, j), &i in self.0.keys(), &j in self.0.keys(), i < j)
+    comp!((i, j), i in 0..NUM_PLANETS, j in 0..NUM_PLANETS, i < j)
       .into_iter()
       .fold(self, |Self(mut p), (i, j)| {
-        if let (Some(pi), Some(pj)) = (p.get(&i), p.get(&j)) && pi.pos.distance(pj.pos) < pi.radius + pj.radius {
+        if let (Some(pi), Some(pj)) = (p[i], p[j]) && pi.pos.distance(pj.pos) < pi.radius + pj.radius {
           let pimass = pi.radius.powi(3);
           let pjmass = pj.radius.powi(3);
           let total_mass = pimass + pjmass;
-          let pos = (pi.pos * pimass + pj.pos * pjmass) / total_mass;
-          let vel = (pi.vel * pimass + pj.vel * pjmass) / total_mass;
-          let color = Color { r: pi.color.r.max(pj.color.r),
-                              g: pi.color.g.max(pj.color.g),
-                              b: pi.color.b.max(pj.color.b),
-                              a: 1.0 };
-          let radius = total_mass.cbrt();
-          p.insert(i, Planet { pos,
-                               vel,
-                               color,
-                               radius });
-          p.remove(&j);
+          p[i] = Some(Planet { pos: (pi.pos * pimass + pj.pos * pjmass) / total_mass,
+                               vel: (pi.vel * pimass + pj.vel * pjmass) / total_mass,
+                               color:Color { r: pi.color.r.max(pj.color.r),
+                                             g: pi.color.g.max(pj.color.g),
+                                             b: pi.color.b.max(pj.color.b),
+                                             a: 1.0 },
+                               radius: total_mass.cbrt() });
+          p[j] = None;
         }
         Self(p)
       })
@@ -216,17 +226,20 @@ async fn main() {
 
     draw_grid(100, 2.0, DARKGRAY, DARKGRAY);
 
-    planets.0.values().for_each(|Planet { pos: DVec3 { x, y, z },
-                                          color,
-                                          radius,
-                                          .. }| {
-                                  draw_sphere(Vec3 { x: *x as f32,
-                                                     y: *y as f32,
-                                                     z: *z as f32 },
-                                              *radius as f32,
-                                              None,
-                                              *color)
-                                });
+    planets.0.iter().for_each(|&p| {
+                      if let Some(Planet { pos: DVec3 { x, y, z },
+                                           color,
+                                           radius,
+                                           .. }) = p
+                      {
+                        draw_sphere(Vec3 { x: x as f32,
+                                           y: y as f32,
+                                           z: z as f32 },
+                                    radius as f32,
+                                    None,
+                                    color)
+                      }
+                    });
 
     // Back to screen space, render some text
 
