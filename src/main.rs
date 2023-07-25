@@ -61,9 +61,9 @@ impl Planet {
              pos: dvec3(r as f64 * 70.0 - 25.0,
                         g as f64 * 70.0 - 25.0,
                         b as f64 * 70.0 - 25.0),
-             vel: dvec3(rng(-0.04, 0.04) as f64,
-                        rng(-0.04, 0.04) as f64,
-                        rng(-0.04, 0.04) as f64),
+             vel: dvec3(rng(-0.035, 0.035) as f64,
+                        rng(-0.035, 0.035) as f64,
+                        rng(-0.035, 0.035) as f64),
              radius: rng(0.1, 0.4) as f64 }
   }
 }
@@ -87,35 +87,21 @@ impl Planets {
                }))
   }
   fn gravity(self) -> Self {
-    comp!((i, j), i in 0..NUM_PLANETS, j in 0..NUM_PLANETS, i < j).into_iter()
-                                                                  .fold(self, |Self(mut p), (i, j)| {
-                                                                    if let (Some(pi), Some(pj)) =
-                                                                      (p[i], p[j])
-                                                                    {
-                                                                      let posdiff = pj.pos - pi.pos;
-                                                                      let dist = posdiff.length();
-                                                                      let pimass = pi.radius.powi(3);
-                                                                      let pjmass = pj.radius.powi(3);
-                                                                      let g = 0.027;
-                                                                      p[i] =
-                                                                        Some(Planet { vel:
-                                                                                        pi.vel
-                                                                                        + g
-                                                                                          * pjmass
-                                                                                          * posdiff
-                                                                                          / dist.powi(3),
-                                                                                      ..pi });
-                                                                      p[j] =
-                                                                        Some(Planet { vel:
-                                                                                        pj.vel
-                                                                                        - g
-                                                                                          * pimass
-                                                                                          * posdiff
-                                                                                          / dist.powi(3),
-                                                                                      ..pj });
-                                                                    }
-                                                                    Self(p)
-                                                                  })
+    let indexpairs = iproduct!(0..NUM_PLANETS, 0..NUM_PLANETS).filter(|(i, j)| i < j);
+    indexpairs.fold(self, |Self(mut p), (i, j)| {
+                if let (Some(pi), Some(pj)) = (p[i], p[j]) {
+                  let posdiff = pj.pos - pi.pos;
+                  let dist = posdiff.length();
+                  let pimass = pi.radius.powi(3);
+                  let pjmass = pj.radius.powi(3);
+                  let g = 0.027;
+                  p[i] = Some(Planet { vel: pi.vel + g * pjmass * posdiff / dist.powi(3),
+                                       ..pi });
+                  p[j] = Some(Planet { vel: pj.vel - g * pimass * posdiff / dist.powi(3),
+                                       ..pj });
+                }
+                Self(p)
+              })
   }
   fn collisions(self) -> Self {
     comp!((i, j), i in 0..NUM_PLANETS, j in 0..NUM_PLANETS, i < j)
