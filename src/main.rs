@@ -58,12 +58,12 @@ impl Planet {
     let g = rng(0.1, 0.99) as f32;
     let b = rng(0.1, 0.99) as f32;
     Planet { color: Color { a: 1.0, r, g, b },
-             pos: dvec3(r as f64 * 70.0 - 25.0,
-                        g as f64 * 70.0 - 25.0,
-                        b as f64 * 70.0 - 25.0),
-             vel: dvec3(rng(-0.035, 0.035) as f64,
-                        rng(-0.035, 0.035) as f64,
-                        rng(-0.035, 0.035) as f64),
+             pos: dvec3(r as f64 * 50.0 - 25.0,
+                        g as f64 * 50.0 - 25.0,
+                        b as f64 * 50.0 - 25.0),
+             vel: dvec3(rng(-0.03, 0.03) as f64,
+                        rng(-0.03, 0.03) as f64,
+                        rng(-0.03, 0.03) as f64),
              radius: rng(0.1, 0.4) as f64 }
   }
 }
@@ -105,10 +105,8 @@ impl Planets {
          iproduct!(0..NUM_PLANETS, 0..NUM_PLANETS).filter(|(i, j)| i < j))
   }
   fn collisions(self) -> Self {
-    comp!((i, j), i in 0..NUM_PLANETS, j in 0..NUM_PLANETS, i < j)
-      .into_iter()
-      .fold(self, |Self(mut p), (i, j)| {
-        if let (Some(pi), Some(pj)) = (p[i], p[j]) && pi.pos.distance(pj.pos) < pi.radius + pj.radius {
+    fold(|Self(mut p), (i, j)| {
+           if let (Some(pi), Some(pj)) = (p[i], p[j]) && pi.pos.distance(pj.pos) < pi.radius + pj.radius {
           let pimass = pi.radius.powi(3);
           let pjmass = pj.radius.powi(3);
           let total_mass = pimass + pjmass;
@@ -121,8 +119,10 @@ impl Planets {
                                radius: total_mass.cbrt() });
           p[j] = None;
         }
-        Self(p)
-      })
+           Self(p)
+         },
+         self,
+         iproduct!(0..NUM_PLANETS, 0..NUM_PLANETS).filter(|(i, j)| i < j))
   }
 }
 struct State {
