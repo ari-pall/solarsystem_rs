@@ -87,21 +87,22 @@ impl Planets {
                }))
   }
   fn gravity(self) -> Self {
-    let indexpairs = iproduct!(0..NUM_PLANETS, 0..NUM_PLANETS).filter(|(i, j)| i < j);
-    indexpairs.fold(self, |Self(mut p), (i, j)| {
-                if let (Some(pi), Some(pj)) = (p[i], p[j]) {
-                  let posdiff = pj.pos - pi.pos;
-                  let dist = posdiff.length();
-                  let pimass = pi.radius.powi(3);
-                  let pjmass = pj.radius.powi(3);
-                  let g = 0.027;
-                  p[i] = Some(Planet { vel: pi.vel + g * pjmass * posdiff / dist.powi(3),
-                                       ..pi });
-                  p[j] = Some(Planet { vel: pj.vel - g * pimass * posdiff / dist.powi(3),
-                                       ..pj });
-                }
-                Self(p)
-              })
+    fold(|Self(mut p), (i, j)| {
+           if let (Some(pi), Some(pj)) = (p[i], p[j]) {
+             let posdiff = pj.pos - pi.pos;
+             let dist = posdiff.length();
+             let pimass = pi.radius.powi(3);
+             let pjmass = pj.radius.powi(3);
+             let g = 0.027;
+             p[i] = Some(Planet { vel: pi.vel + g * pjmass * posdiff / dist.powi(3),
+                                  ..pi });
+             p[j] = Some(Planet { vel: pj.vel - g * pimass * posdiff / dist.powi(3),
+                                  ..pj });
+           }
+           Self(p)
+         },
+         self,
+         iproduct!(0..NUM_PLANETS, 0..NUM_PLANETS).filter(|(i, j)| i < j))
   }
   fn collisions(self) -> Self {
     comp!((i, j), i in 0..NUM_PLANETS, j in 0..NUM_PLANETS, i < j)
