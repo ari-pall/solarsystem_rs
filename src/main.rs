@@ -71,7 +71,7 @@ fn hashmap<K: Eq + Hash, V>(coll: impl IntoIterator<Item = (K, V)>) -> HashMap<K
   coll.into_iter().collect()
 }
 // fn collect<C:FromIterator< >>()
-const NUM_PLANETS: usize = 150;
+const NUM_PLANETS: usize = 80;
 struct Planets([Option<Planet>; NUM_PLANETS]);
 impl Default for Planets {
   fn default() -> Self { Self([Some(Planet::random()); NUM_PLANETS].map(|_| Some(Planet::random()))) }
