@@ -2,21 +2,19 @@
 #![allow(dead_code)]
 #![feature(let_chains)]
 
+use macroquad::rand::{ChooseRandom, RandomRange};
+
 use {derive_more::From,
      itertools::{iproduct, Combinations, Itertools},
      // iter_comprehensions::sum,
      list_comprehension::comp,
      macroquad::{color, miniquad::KeyCode, prelude::*},
      std::{boxed::Box,
-           collections::HashSet,
-           collections::{BTreeMap, HashMap},
-           convert::identity,
-           fmt::{Debug, Display, Result},
+           collections::HashMap,
            hash::Hash,
-           io::{self, stdin, stdout, BufRead, Error, Lines, Read, StdinLock, Write},
            iter::{IntoIterator, Map},
            num,
-           ops::{Add, Deref, DerefMut, Div, MulAssign, Not, Rem, Sub},
+           ops::{Add, Deref, DerefMut, Not},
            str::{FromStr, SplitAsciiWhitespace},
            string,
            vec::{IntoIter, Vec}}};
@@ -41,7 +39,8 @@ struct Planet {
   pos: DVec3,
   vel: DVec3,
   color: Color,
-  radius: f64
+  radius: f64,
+  mass: f64
 }
 impl Planet {
   fn star() -> Planet {
@@ -50,21 +49,22 @@ impl Planet {
                           z: 2.3 },
              vel: DVec3::default(),
              color: Color::from_rgba(255, 255, 0, 255),
-             radius: 1.3 }
+             radius: 1.3,
+             mass: 1.1 }
   }
   fn random() -> Planet {
-    let rng = |a, b| rand::gen_range::<f64>(a, b);
-    let r = rng(0.1, 0.99) as f32;
-    let g = rng(0.1, 0.99) as f32;
-    let b = rng(0.1, 0.99) as f32;
+    fn rng<T: RandomRange>(a: T, b: T) -> T { rand::gen_range(a, b) }
+    let r = rng(0.1, 0.99);
+    let g = rng(0.1, 0.99);
+    let b = rng(0.1, 0.99);
+    let radius = rng(0.1, 0.4) as f64;
     Planet { color: Color { a: 1.0, r, g, b },
              pos: dvec3(r as f64 * 50.0 - 25.0,
                         g as f64 * 50.0 - 25.0,
                         b as f64 * 50.0 - 25.0),
-             vel: dvec3(rng(-0.03, 0.03) as f64,
-                        rng(-0.03, 0.03) as f64,
-                        rng(-0.03, 0.03) as f64),
-             radius: rng(0.1, 0.4) as f64 }
+             vel: dvec3(rng(-0.03, 0.03), rng(-0.03, 0.03), rng(-0.03, 0.03)),
+             radius,
+             mass: radius.powi(3) }
   }
 }
 fn hashmap<K: Eq + Hash, V>(coll: impl IntoIterator<Item = (K, V)>) -> HashMap<K, V> {
@@ -80,6 +80,11 @@ pub fn fold<T, G>(f: impl Fn(T, G) -> T, init: T, coll: impl IntoIterator<Item =
   coll.into_iter().fold(init, f)
 }
 impl Planets {
+  fn get(&self, i: usize) -> Option<Planet> { self.0[i] }
+  fn set(mut self, i: usize, op: Option<Planet>) -> Self {
+    self.0[i] = op;
+    self
+  }
   fn movement(self) -> Self {
     Self(self.0.map(|op| {
                  op.map(|p| Planet { pos: p.pos + p.vel,
@@ -87,39 +92,39 @@ impl Planets {
                }))
   }
   fn gravity(self) -> Self {
-    fold(|Self(mut p), (i, j)| {
-           if let (Some(pi), Some(pj)) = (p[i], p[j]) {
+    fold(|p, (i, j)| {
+           if let (Some(pi), Some(pj)) = (p.get(i), p.get(j)) {
              let posdiff = pj.pos - pi.pos;
              let dist = posdiff.length();
-             let pimass = pi.radius.powi(3);
-             let pjmass = pj.radius.powi(3);
              let g = 0.037;
-             p[i] = Some(Planet { vel: pi.vel + g * pjmass * posdiff / dist.powi(3),
-                                  ..pi });
-             p[j] = Some(Planet { vel: pj.vel - g * pimass * posdiff / dist.powi(3),
-                                  ..pj });
+             p.set(i,
+                   Some(Planet { vel: pi.vel + g * pi.mass * posdiff / dist.powi(3),
+                                 ..pi }))
+              .set(j,
+                   Some(Planet { vel: pj.vel - g * pj.mass * posdiff / dist.powi(3),
+                                 ..pj }))
+           } else {
+             p
            }
-           Self(p)
          },
          self,
          iproduct!(0..NUM_PLANETS, 0..NUM_PLANETS).filter(|(i, j)| i < j))
   }
   fn collisions(self) -> Self {
-    fold(|Self(mut p), (i, j)| {
-           if let (Some(pi), Some(pj)) = (p[i], p[j]) && pi.pos.distance(pj.pos) < pi.radius + pj.radius {
-          let pimass = pi.radius.powi(3);
-          let pjmass = pj.radius.powi(3);
-          let total_mass = pimass + pjmass;
-          p[j] = None;
-          p[i] = Some(Planet { pos: (pi.pos * pimass + pj.pos * pjmass) / total_mass,
-                               vel: (pi.vel * pimass + pj.vel * pjmass) / total_mass,
-                               color:Color { r: pi.color.r.max(pj.color.r),
-                                             g: pi.color.g.max(pj.color.g),
-                                             b: pi.color.b.max(pj.color.b),
-                                             a: 1.0 },
-                               radius: total_mass.cbrt() });
-        }
-           Self(p)
+    fold(|p, (i, j)| match (p.get(i), p.get(j)) {
+           (Some(pi), Some(pj)) if pi.pos.distance(pj.pos) < pi.radius + pj.radius => {
+             let total_mass = pi.mass + pj.mass;
+             p.set(j, None).set(i,
+                                Some(Planet { pos: (pi.pos * pi.mass + pj.pos * pj.mass) / total_mass,
+                                              vel: (pi.vel * pi.mass + pj.vel * pj.mass) / total_mass,
+                                              color: Color { r: pi.color.r.max(pj.color.r),
+                                                             g: pi.color.g.max(pj.color.g),
+                                                             b: pi.color.b.max(pj.color.b),
+                                                             a: 1.0 },
+                                              radius: total_mass.cbrt(),
+                                              mass: total_mass }))
+           }
+           _ => p
          },
          self,
          iproduct!(0..NUM_PLANETS, 0..NUM_PLANETS).filter(|(i, j)| i < j))
