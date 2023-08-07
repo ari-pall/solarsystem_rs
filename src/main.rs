@@ -1,14 +1,15 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
-#![feature(let_chains)]
-
-use macroquad::rand::{ChooseRandom, RandomRange};
+// #![feature(let_chains)]
 
 use {derive_more::From,
      itertools::{iproduct, Combinations, Itertools},
      // iter_comprehensions::sum,
      list_comprehension::comp,
-     macroquad::{color, miniquad::KeyCode, prelude::*},
+     macroquad::{color,
+                 miniquad::KeyCode,
+                 prelude::*,
+                 rand::{ChooseRandom, RandomRange}},
      std::{boxed::Box,
            collections::HashMap,
            hash::Hash,
@@ -22,8 +23,8 @@ use {derive_more::From,
 fn new<T: Default>() -> T { T::default() }
 fn not(v: bool) -> bool { v.not() }
 
-const MOVE_SPEED: f32 = 0.12;
-const LOOK_SPEED: f32 = 0.08;
+const MOVE_SPEED: f32 = 0.16;
+const LOOK_SPEED: f32 = 0.0013;
 const WORLD_UP: Vec3 = vec3(0.0, 1.0, 0.0);
 
 fn conf() -> Conf {
@@ -39,7 +40,7 @@ struct Planet {
   pos: DVec3,
   vel: DVec3,
   color: Color,
-  radius: f64,
+  // radius: f64,
   mass: f64
 }
 impl Planet {
@@ -49,23 +50,24 @@ impl Planet {
                           z: 2.3 },
              vel: DVec3::default(),
              color: Color::from_rgba(255, 255, 0, 255),
-             radius: 1.3,
+             // radius: 1.3,
              mass: 1.1 }
   }
   fn random() -> Planet {
     fn rng<T: RandomRange>(a: T, b: T) -> T { rand::gen_range(a, b) }
-    let r = rng(0.1, 0.99);
-    let g = rng(0.1, 0.99);
-    let b = rng(0.1, 0.99);
-    let radius = rng(0.1, 0.4) as f64;
+    let r = rng(0.01, 0.99);
+    let g = rng(0.01, 0.99);
+    let b = rng(0.01, 0.99);
+    let mass = (rng(0.0002, 0.6) as f64).powi(2);
+    let speed = 0.03;
     Planet { color: Color { a: 1.0, r, g, b },
              pos: dvec3(r as f64 * 50.0 - 25.0,
                         g as f64 * 50.0 - 25.0,
                         b as f64 * 50.0 - 25.0),
-             vel: dvec3(rng(-0.03, 0.03), rng(-0.03, 0.03), rng(-0.03, 0.03)),
-             radius,
-             mass: radius.powi(3) }
+             vel: dvec3(rng(-speed, speed), rng(-speed, speed), rng(-speed, speed)),
+             mass }
   }
+  fn radius(&self) -> f64 { self.mass.cbrt() }
 }
 fn hashmap<K: Eq + Hash, V>(coll: impl IntoIterator<Item = (K, V)>) -> HashMap<K, V> {
   coll.into_iter().collect()
@@ -96,12 +98,12 @@ impl Planets {
            if let (Some(pi), Some(pj)) = (p.get(i), p.get(j)) {
              let posdiff = pj.pos - pi.pos;
              let dist = posdiff.length();
-             let g = 0.037;
+             let g = 0.007;
              p.set(i,
-                   Some(Planet { vel: pi.vel + g * pi.mass * posdiff / dist.powi(3),
+                   Some(Planet { vel: pi.vel + g * pj.mass * posdiff / dist.powi(3),
                                  ..pi }))
               .set(j,
-                   Some(Planet { vel: pj.vel - g * pj.mass * posdiff / dist.powi(3),
+                   Some(Planet { vel: pj.vel - g * pi.mass * posdiff / dist.powi(3),
                                  ..pj }))
            } else {
              p
@@ -112,7 +114,7 @@ impl Planets {
   }
   fn collisions(self) -> Self {
     fold(|p, (i, j)| match (p.get(i), p.get(j)) {
-           (Some(pi), Some(pj)) if pi.pos.distance(pj.pos) < pi.radius + pj.radius => {
+           (Some(pi), Some(pj)) if pi.pos.distance(pj.pos) < pi.radius() + pj.radius() => {
              let total_mass = pi.mass + pj.mass;
              p.set(j, None).set(i,
                                 Some(Planet { pos: (pi.pos * pi.mass + pj.pos * pj.mass) / total_mass,
@@ -121,7 +123,6 @@ impl Planets {
                                                              g: pi.color.g.max(pj.color.g),
                                                              b: pi.color.b.max(pj.color.b),
                                                              a: 1.0 },
-                                              radius: total_mass.cbrt(),
                                               mass: total_mass }))
            }
            _ => p
@@ -151,7 +152,7 @@ impl Default for State {
   }
 }
 impl State {
-  fn update(self, change: Vec3, mouse_position: Vec2, delta: f32) -> Self {
+  fn update(self, change: Vec3, mouse_position: Vec2) -> Self {
     let Self { last_mouse_position,
                pitch,
                yaw,
@@ -161,8 +162,8 @@ impl State {
     let mouse_delta = mouse_position - last_mouse_position;
 
     Self { last_mouse_position: mouse_position,
-           pitch: (pitch + mouse_delta.y * delta * -LOOK_SPEED).clamp(-1.5, 1.5),
-           yaw: yaw + mouse_delta.x * delta * LOOK_SPEED,
+           pitch: (pitch - mouse_delta.y * LOOK_SPEED).clamp(-1.5, 1.5),
+           yaw: yaw + mouse_delta.x * LOOK_SPEED,
            planets: planets.gravity().movement().collisions(),
            position: position + change,
            ..self }
@@ -179,7 +180,6 @@ async fn main() {
   loop {
     // Quat::from_rotation_y(angle)
     //   Quat::to_axis_angle(self)
-    let delta = get_frame_time();
 
     if is_key_pressed(KeyCode::Escape) {
       break;
@@ -201,7 +201,7 @@ async fn main() {
                                                  (KeyCode::LeftControl, -up)]
                              , is_key_down(key)));
     let mouse_position = Vec2::from(mouse_position());
-    state = state.update(change, mouse_position, delta);
+    state = state.update(change, mouse_position);
     let State { planets,
                 position,
                 grabbed,
@@ -221,13 +221,13 @@ async fn main() {
     planets.0.iter().for_each(|&p| {
                       if let Some(Planet { pos: DVec3 { x, y, z },
                                            color,
-                                           radius,
+                                           mass,
                                            .. }) = p
                       {
                         draw_sphere(Vec3 { x: x as f32,
                                            y: y as f32,
                                            z: z as f32 },
-                                    radius as f32,
+                                    mass.cbrt() as f32,
                                     None,
                                     color)
                       }
