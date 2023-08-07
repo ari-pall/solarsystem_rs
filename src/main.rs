@@ -24,7 +24,7 @@ fn new<T: Default>() -> T { T::default() }
 fn not(v: bool) -> bool { v.not() }
 
 const MOVE_SPEED: f32 = 0.16;
-const LOOK_SPEED: f32 = 0.0013;
+const LOOK_SPEED: f32 = 0.0017;
 const WORLD_UP: Vec3 = vec3(0.0, 1.0, 0.0);
 
 fn conf() -> Conf {
