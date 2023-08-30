@@ -17,8 +17,6 @@ use {derive_more::From,
            string,
            vec::{IntoIter, Vec}}};
 
-fn new<T: Default>() -> T { T::default() }
-
 const MOVE_SPEED: f32 = 0.16;
 const LOOK_SPEED: f32 = 0.0017;
 const WORLD_UP: Vec3 = vec3(0.0, 1.0, 0.0);
