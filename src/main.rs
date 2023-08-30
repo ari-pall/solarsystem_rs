@@ -1,14 +1,12 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
-// #![feature(let_chains)]
 
-use rust_utils::{filter, iproduct, map, prelude::Tap};
 use {derive_more::From,
-     // iter_comprehensions::sum,
      macroquad::{color,
                  miniquad::KeyCode,
                  prelude::*,
                  rand::{ChooseRandom, RandomRange}},
+     rust_utils::{filter, iproduct, map, prelude::Tap},
      std::{boxed::Box,
            collections::HashMap,
            hash::Hash,
