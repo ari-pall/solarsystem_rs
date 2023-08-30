@@ -7,10 +7,8 @@ edition = "2021"
 
 [dependencies]
 derive_more = "0.99.17"
-iter-comprehensions = "0.5.0"
-itertools = "0.11.0"
-list_comprehension = "0.1.5"
 macroquad = "0.4.1"
+rust_utils = {path = "../rust_utils"}
 
 [profile.dev]
 opt-level = 3

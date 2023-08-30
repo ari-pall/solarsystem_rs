@@ -2,10 +2,9 @@
 #![allow(dead_code)]
 // #![feature(let_chains)]
 
+use rust_utils::{filter, iproduct, map, prelude::Tap};
 use {derive_more::From,
-     itertools::{iproduct, Combinations, Itertools},
      // iter_comprehensions::sum,
-     list_comprehension::comp,
      macroquad::{color,
                  miniquad::KeyCode,
                  prelude::*,
@@ -21,7 +20,6 @@ use {derive_more::From,
            vec::{IntoIter, Vec}}};
 
 fn new<T: Default>() -> T { T::default() }
-fn not(v: bool) -> bool { v.not() }
 
 const MOVE_SPEED: f32 = 0.16;
 const LOOK_SPEED: f32 = 0.0017;
@@ -33,14 +31,15 @@ fn conf() -> Conf {
 }
 
 fn vec3_from_spherical_coords(yaw: f32, pitch: f32) -> Vec3 {
-  vec3(yaw.cos() * pitch.cos(), pitch.sin(), yaw.sin() * pitch.cos()).normalize()
+  vec3(yaw.cos() * pitch.cos(),
+       pitch.sin(),
+       yaw.sin() * pitch.cos()).normalize()
 }
 #[derive(Copy, Clone)]
 struct Planet {
   pos: DVec3,
   vel: DVec3,
   color: Color,
-  // radius: f64,
   mass: f64
 }
 impl Planet {
@@ -50,7 +49,6 @@ impl Planet {
                           z: 2.3 },
              vel: DVec3::default(),
              color: Color::from_rgba(255, 255, 0, 255),
-             // radius: 1.3,
              mass: 1.1 }
   }
   fn random() -> Planet {
@@ -72,21 +70,19 @@ impl Planet {
 fn hashmap<K: Eq + Hash, V>(coll: impl IntoIterator<Item = (K, V)>) -> HashMap<K, V> {
   coll.into_iter().collect()
 }
-// fn collect<C:FromIterator< >>()
 const NUM_PLANETS: usize = 60;
 struct Planets([Option<Planet>; NUM_PLANETS]);
 impl Default for Planets {
-  fn default() -> Self { Self([Some(Planet::random()); NUM_PLANETS].map(|_| Some(Planet::random()))) }
+  fn default() -> Self {
+    Self([Some(Planet::random()); NUM_PLANETS].map(|_| Some(Planet::random())))
+  }
 }
 pub fn fold<T, G>(f: impl Fn(T, G) -> T, init: T, coll: impl IntoIterator<Item = G>) -> T {
   coll.into_iter().fold(init, f)
 }
 impl Planets {
   fn get(&self, i: usize) -> Option<Planet> { self.0[i] }
-  fn set(mut self, i: usize, op: Option<Planet>) -> Self {
-    self.0[i] = op;
-    self
-  }
+  fn set(self, i: usize, op: Option<Planet>) -> Self { self.tap_mut(|s| s.0[i] = op) }
   fn movement(self) -> Self {
     Self(self.0.map(|op| {
                  op.map(|p| Planet { pos: p.pos + p.vel,
@@ -116,14 +112,15 @@ impl Planets {
     fold(|p, (i, j)| match (p.get(i), p.get(j)) {
            (Some(pi), Some(pj)) if pi.pos.distance(pj.pos) < pi.radius() + pj.radius() => {
              let total_mass = pi.mass + pj.mass;
-             p.set(j, None).set(i,
-                                Some(Planet { pos: (pi.pos * pi.mass + pj.pos * pj.mass) / total_mass,
-                                              vel: (pi.vel * pi.mass + pj.vel * pj.mass) / total_mass,
-                                              color: Color { r: pi.color.r.max(pj.color.r),
-                                                             g: pi.color.g.max(pj.color.g),
-                                                             b: pi.color.b.max(pj.color.b),
-                                                             a: 1.0 },
-                                              mass: total_mass }))
+             p.set(i,
+                   Some(Planet { pos: (pi.pos * pi.mass + pj.pos * pj.mass) / total_mass,
+                                 vel: (pi.vel * pi.mass + pj.vel * pj.mass) / total_mass,
+                                 color: Color { r: pi.color.r.max(pj.color.r),
+                                                g: pi.color.g.max(pj.color.g),
+                                                b: pi.color.b.max(pj.color.b),
+                                                a: 1.0 },
+                                 mass: total_mass }))
+              .set(j, None)
            }
            _ => p
          },
@@ -193,13 +190,14 @@ async fn main() {
     let right = front.cross(WORLD_UP).normalize();
     let up = right.cross(front).normalize();
     let change = MOVE_SPEED
-                 * sum(comp!(dir, (key, dir) in [(KeyCode::W, front),
-                                                 (KeyCode::A, -right),
-                                                 (KeyCode::S, -front),
-                                                 (KeyCode::D, right),
-                                                 (KeyCode::LeftShift, up),
-                                                 (KeyCode::LeftControl, -up)]
-                             , is_key_down(key)));
+                 * sum(map(|(_, dir)| dir,
+                           filter(|(key, _)| is_key_down(*key),
+                                  [(KeyCode::W, front),
+                                   (KeyCode::A, -right),
+                                   (KeyCode::S, -front),
+                                   (KeyCode::D, right),
+                                   (KeyCode::LeftShift, up),
+                                   (KeyCode::LeftControl, -up)])));
     let mouse_position = Vec2::from(mouse_position());
     state = state.update(change, mouse_position);
     let State { planets,
