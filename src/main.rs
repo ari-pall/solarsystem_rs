@@ -27,7 +27,7 @@ fn coolmesh() -> Mesh {
 fn draw_it() { draw_mesh(&coolmesh()); }
 
 const MOVE_SPEED: f32 = 0.16;
-const LOOK_SPEED: f32 = 0.001;
+const LOOK_SPEED: f32 = 0.002;
 
 fn conf() -> Conf {
   Conf { fullscreen: true,
@@ -181,6 +181,7 @@ async fn main() {
       show_mouse(!state.grabbed);
     }
 
+    // let [front, up, right] = Vec3::AXES.map(|v| state.orientation * v);
     let front = state.orientation * Vec3::Z;
     let up = state.orientation * Vec3::Y;
     let left = state.orientation * Vec3::X;
