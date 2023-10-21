@@ -1,17 +1,20 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 
+use std::convert::identity;
+
 use {macroquad::{camera::Camera3D,
                  miniquad::KeyCode,
                  models::{draw_mesh, Mesh, Vertex},
                  prelude::{Color, Vec2, Vec3, *},
                  rand::RandomRange},
-     rust_utils::{filter, fold, iproduct, map, tap_mut},
+     rust_utils::{filter, fold, map, pairs, MutateTrait},
      std::{collections::HashMap, hash::Hash, iter::IntoIterator}};
 
 fn coolmesh() -> Mesh {
   // Vertex
   let rand_color = || Color::from_rgba(rng(0, 255), rng(0, 255), rng(0, 255), 155);
+
   let uv = Vec2::from([0.6, 0.7]);
   // let rng = || rand::gen_range(-5.0, 5.0);
   let rand_pos = || Vec3::from([rng(-5.0, 5.0), rng(-5.0, 5.0), rng(-5.0, 5.0)]);
@@ -39,6 +42,7 @@ fn vec3_from_spherical_coords(yaw: f32, pitch: f32) -> Vec3 {
        pitch.sin(),
        yaw.sin() * pitch.cos()).normalize()
 }
+
 #[derive(Copy, Clone)]
 struct Planet {
   pos: Vec3,
@@ -74,6 +78,7 @@ fn hashmap<K: Eq + Hash, V>(coll: impl IntoIterator<Item = (K, V)>) -> HashMap<K
   coll.into_iter().collect()
 }
 const NUM_PLANETS: usize = 60;
+#[derive(Copy, Clone)]
 struct Planets([Option<Planet>; NUM_PLANETS]);
 impl Default for Planets {
   fn default() -> Self {
@@ -82,7 +87,7 @@ impl Default for Planets {
 }
 impl Planets {
   fn get(&self, i: usize) -> Option<Planet> { self.0[i] }
-  fn set(self, i: usize, op: Option<Planet>) -> Self { tap_mut(self, |s| s.0[i] = op) }
+  fn set(self, i: usize, op: Option<Planet>) -> Self { self.mutate(|s| s.0[i] = op) }
   fn movement(self) -> Self {
     Self(self.0.map(|op| {
                  op.map(|p| Planet { pos: p.pos + p.vel,
@@ -106,7 +111,7 @@ impl Planets {
            }
          },
          self,
-         iproduct!(0..NUM_PLANETS, 0..NUM_PLANETS).filter(|(i, j)| i < j))
+         pairs(0..NUM_PLANETS, 0..NUM_PLANETS).filter(|(i, j)| i < j))
   }
   fn collisions(self) -> Self {
     fold(|p, (i, j)| match (p.get(i), p.get(j)) {
@@ -125,7 +130,7 @@ impl Planets {
            _ => p
          },
          self,
-         iproduct!(0..NUM_PLANETS, 0..NUM_PLANETS).filter(|(i, j)| i < j))
+         pairs(0..NUM_PLANETS, 0..NUM_PLANETS).filter(|(i, j)| i < j))
   }
 }
 struct State {
@@ -155,9 +160,9 @@ impl State {
 
     Self { last_mouse_position: mouse_position,
            orientation: orientation.normalize()
-                        * Quat::from_rotation_x(y)
+                        * Quat::from_rotation_z(-y)
                         * Quat::from_rotation_y(-x),
-           planets: planets.gravity().movement().collisions(),
+           planets: planets.collisions().gravity().movement(),
            position: position + poschange,
            ..self }
   }
@@ -181,41 +186,38 @@ async fn main() {
       show_mouse(!state.grabbed);
     }
 
-    // let [front, up, right] = Vec3::AXES.map(|v| state.orientation * v);
-    let front = state.orientation * Vec3::Z;
-    let up = state.orientation * Vec3::Y;
-    let left = state.orientation * Vec3::X;
+    let [front, up, right] = Vec3::AXES.map(|v| state.orientation * v);
     let poschange = MOVE_SPEED
                     * sum(map(|(_, dir)| dir,
                               filter(|(key, _)| is_key_down(*key),
                                      [(KeyCode::W, front),
-                                      (KeyCode::A, left),
+                                      (KeyCode::A, -right),
                                       (KeyCode::S, -front),
-                                      (KeyCode::D, -left),
+                                      (KeyCode::D, right),
                                       (KeyCode::LeftShift, up),
                                       (KeyCode::LeftControl, -up)])));
     let mouse_position = Vec2::from(mouse_position());
     state = state.update(poschange, mouse_position);
-    let State { planets,
-                position,
-                grabbed,
-                .. } = &state;
+    let &State { planets,
+                 position,
+                 grabbed,
+                 .. } = &state;
 
     clear_background(BLACK);
 
     // Going 3d!
 
-    set_camera(&Camera3D { position: *position,
+    set_camera(&Camera3D { position,
                            up,
-                           target: *position + front,
+                           target: position + front,
                            ..Default::default() });
-    draw_mesh(&mesh);
 
     draw_grid(100, 2.0, DARKGRAY, DARKGRAY);
 
-    for Planet { pos, color, mass, .. } in planets.0.iter().filter_map(ToOwned::to_owned) {
+    for Planet { pos, color, mass, .. } in planets.0.into_iter().filter_map(identity) {
       draw_sphere(pos, mass.cbrt(), None, color)
     }
+    draw_mesh(&mesh);
 
     // Back to screen space, render some text
 
