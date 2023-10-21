@@ -78,7 +78,7 @@ fn hashmap<K: Eq + Hash, V>(coll: impl IntoIterator<Item = (K, V)>) -> HashMap<K
   coll.into_iter().collect()
 }
 const NUM_PLANETS: usize = 60;
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 struct Planets([Option<Planet>; NUM_PLANETS]);
 impl Default for Planets {
   fn default() -> Self {
@@ -198,8 +198,7 @@ async fn main() {
                                       (KeyCode::LeftControl, -up)])));
     let mouse_position = Vec2::from(mouse_position());
     state = state.update(poschange, mouse_position);
-    let &State { planets,
-                 position,
+    let &State { position,
                  grabbed,
                  .. } = &state;
 
@@ -214,7 +213,7 @@ async fn main() {
 
     draw_grid(100, 2.0, DARKGRAY, DARKGRAY);
 
-    for Planet { pos, color, mass, .. } in planets.0.into_iter().filter_map(identity) {
+    for Planet { pos, color, mass, .. } in state.planets.clone().0.into_iter().filter_map(identity) {
       draw_sphere(pos, mass.cbrt(), None, color)
     }
     draw_mesh(&mesh);
